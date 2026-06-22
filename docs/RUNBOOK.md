@@ -107,6 +107,7 @@ GET  /api/euthernet/status
 GET  /api/euthernet/repos
 GET  /api/euthernet/inventory
 GET  /api/euthernet/commands
+GET  /api/euthernet/report
 POST /api/euthernet/ask
 POST /api/euthernet/refresh
 POST /api/euthernet/run
@@ -117,6 +118,7 @@ Examples:
 ```sh
 curl -fsS http://127.0.0.1:8791/api/euthernet/status
 curl -fsS http://127.0.0.1:8791/api/euthernet/repos
+curl -fsS http://127.0.0.1:8791/api/euthernet/report
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \
   -H 'Content-Type: application/json' \
   -d '{"question":"vilka repos är dirty?"}'
@@ -145,6 +147,7 @@ Recommended EutherPunk chat tools:
 
 - `server_status` -> `GET /api/euthernet/status`
 - `server_repos` -> `GET /api/euthernet/repos`
+- `server_full_report` -> `GET /api/euthernet/report`
 - `server_refresh` -> `POST /api/euthernet/refresh`
 - `server_run` -> `POST /api/euthernet/run`
 
@@ -153,6 +156,7 @@ For the first chat UI pass, slash commands are enough:
 ```text
 /server status
 /server repos
+/server full report
 /server refresh
 /server run disk
 ```

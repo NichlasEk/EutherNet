@@ -159,6 +159,121 @@ def ai_context(config: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def first_line(value: str) -> str:
+    return value.splitlines()[0] if value else ""
+
+
+def fenced_block(value: str, limit: int = 12000) -> str:
+    text = value.strip()
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "\n... [truncated]"
+    return "```text\n" + text + "\n```"
+
+
+def full_report(config: dict[str, Any]) -> dict[str, Any]:
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first", "report": ""}
+
+    server = snapshot["server"]
+    collectors = snapshot.get("collectors", {})
+    repos = parse_repos(snapshot)
+    dirty_repos = [repo for repo in repos if int(repo.get("dirty_lines") or "0") > 0]
+
+    system = collectors.get("system", {})
+    systemd = collectors.get("systemd", {})
+    network = collectors.get("network", {})
+
+    lines = [
+        f"# EutherNet Full Report: {server.get('name', 'server')}",
+        "",
+        f"- Collected at: `{snapshot.get('collected_at', '')}`",
+        f"- LAN host: `{server.get('lan_host', '')}`",
+        f"- Public host: `{server.get('public_host', '')}`",
+        f"- Command transport: `{server.get('command_transport', 'ssh')}`",
+        f"- Preflight: `{'ok' if snapshot.get('ssh_preflight', {}).get('ok') else 'failed'}`",
+        "",
+        "## Collector Status",
+        "",
+    ]
+
+    for name, group in collectors.items():
+        if name == "git_repositories":
+            scan = group.get("scan", {})
+            lines.append(f"- `{name}`: `{'ok' if scan.get('ok') else 'failed'}` ({len(repos)} repos)")
+        elif "preflight" in group:
+            lines.append(f"- `{name}`: `skipped`")
+        else:
+            total = len(group)
+            ok = sum(1 for value in group.values() if value.get("ok"))
+            lines.append(f"- `{name}`: `{ok}/{total}` commands ok")
+
+    lines.extend(["", "## System", ""])
+    system_fields = [
+        ("Hostname", first_line(system.get("hostname", {}).get("stdout", ""))),
+        ("Date", first_line(system.get("date", {}).get("stdout", ""))),
+        ("Kernel", first_line(system.get("uname", {}).get("stdout", ""))),
+        ("Uptime", first_line(system.get("uptime", {}).get("stdout", ""))),
+    ]
+    for label, value in system_fields:
+        if value:
+            lines.append(f"- {label}: `{value}`")
+
+    memory = system.get("memory", {}).get("stdout", "")
+    disk = system.get("disk", {}).get("stdout", "")
+    if memory:
+        lines.extend(["", "### Memory", "", fenced_block(memory)])
+    if disk:
+        lines.extend(["", "### Disk", "", fenced_block(disk)])
+
+    addresses = network.get("addresses", {}).get("stdout", "")
+    listening = network.get("listening_tcp_udp", {}).get("stdout", "")
+    lines.extend(["", "## Network", ""])
+    if addresses:
+        lines.append(f"- Addresses: `{first_line(addresses)}`")
+    if listening:
+        lines.extend(["", "### Listening Ports", "", fenced_block(listening)])
+
+    failed = systemd.get("failed_services", {}).get("stdout", "")
+    running = systemd.get("running_services", {}).get("stdout", "")
+    timers = systemd.get("timers", {}).get("stdout", "")
+    lines.extend(["", "## systemd", ""])
+    if failed:
+        lines.extend(["### Failed Services", "", fenced_block(failed)])
+    if running:
+        lines.extend(["", "### Running Services", "", fenced_block(running)])
+    if timers:
+        lines.extend(["", "### Timers", "", fenced_block(timers)])
+
+    lines.extend(["", "## Git Repositories", ""])
+    lines.append(f"- Total: `{len(repos)}`")
+    lines.append(f"- Dirty: `{len(dirty_repos)}`")
+    if repos:
+        lines.extend(["", "| Repo | Branch | Head | Dirty | Remote |", "| --- | --- | --- | --- | --- |"])
+        for repo in repos:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        repo.get("path", ""),
+                        repo.get("branch", "") or "detached/unknown",
+                        repo.get("head", ""),
+                        repo.get("dirty_lines", "0"),
+                        repo.get("remote", ""),
+                    ]
+                )
+                + " |"
+            )
+
+    return {
+        "ok": True,
+        "collected_at": snapshot.get("collected_at", ""),
+        "repository_count": len(repos),
+        "dirty_repository_count": len(dirty_repos),
+        "report": "\n".join(lines).rstrip() + "\n",
+    }
+
+
 def ai_answer(config: dict[str, Any], question: str, local_context: str) -> str | None:
     ai = config.get("ai", {})
     if not ai.get("enabled"):

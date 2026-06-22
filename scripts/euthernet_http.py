@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from euthernet_cli import answer_question, latest_snapshot, parse_repos, run_allowed_command
+from euthernet_cli import answer_question, full_report, latest_snapshot, parse_repos, run_allowed_command
 from euthernet_inventory import collect, load_config, write_outputs
 
 
@@ -53,6 +53,9 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/commands":
             self.handle_commands()
+            return
+        if path == "/api/euthernet/report":
+            self.handle_report()
             return
         self.write_error(HTTPStatus.NOT_FOUND, "unknown endpoint")
 
@@ -125,6 +128,13 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             for item in self.config.get("commands", {}).get("allowed", [])
         ]
         self.write_json(HTTPStatus.OK, {"ok": True, "commands": commands})
+
+    def handle_report(self) -> None:
+        report = full_report(self.config)
+        if not report.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(report.get("error", "report unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, report)
 
     def handle_ask(self) -> None:
         try:
