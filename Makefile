@@ -9,6 +9,9 @@
 .PHONY: changes
 .PHONY: restore-plan
 .PHONY: restore-bundle
+.PHONY: backup-manifest
+.PHONY: restore-drill
+.PHONY: server-map
 
 inventory:
 	python scripts/euthernet_inventory.py --config euthernet.toml
@@ -33,6 +36,15 @@ restore-plan:
 
 restore-bundle:
 	python scripts/euthernet_cli.py --config euthernet.toml restore-bundle --profile "$(PROFILE)"
+
+backup-manifest:
+	@python scripts/euthernet_cli.py --config euthernet.toml backup-manifest
+
+restore-drill:
+	@python scripts/euthernet_cli.py --config euthernet.toml restore-drill
+
+server-map:
+	@python scripts/euthernet_cli.py --config euthernet.toml server-map
 
 run:
 	python scripts/euthernet_cli.py --config euthernet.toml run "$(CMD)"

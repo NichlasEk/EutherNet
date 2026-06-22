@@ -12,11 +12,14 @@ from urllib.parse import parse_qs, urlparse
 
 from euthernet_cli import (
     answer_question,
+    backup_manifest,
     drift_changes,
+    eutherverse_map,
     full_report,
     latest_snapshot,
     operational_summary,
     parse_repos,
+    restore_drill,
     restore_bundle,
     restore_plan,
     run_allowed_command,
@@ -78,6 +81,15 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/restore-bundle":
             self.handle_restore_bundle()
+            return
+        if path == "/api/euthernet/backup-manifest":
+            self.handle_backup_manifest()
+            return
+        if path == "/api/euthernet/restore-drill":
+            self.handle_restore_drill()
+            return
+        if path == "/api/euthernet/map":
+            self.handle_map()
             return
         self.write_error(HTTPStatus.NOT_FOUND, "unknown endpoint")
 
@@ -187,6 +199,27 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             self.write_error(HTTPStatus.BAD_REQUEST, str(bundle.get("error", "restore bundle unavailable")))
             return
         self.write_json(HTTPStatus.OK, bundle)
+
+    def handle_backup_manifest(self) -> None:
+        manifest = backup_manifest(self.config)
+        if not manifest.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(manifest.get("error", "backup manifest unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, manifest)
+
+    def handle_restore_drill(self) -> None:
+        drill = restore_drill(self.config)
+        if not drill.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(drill.get("error", "restore drill unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, drill)
+
+    def handle_map(self) -> None:
+        server_map = eutherverse_map(self.config)
+        if not server_map.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(server_map.get("error", "server map unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, server_map)
 
     def handle_ask(self) -> None:
         try:

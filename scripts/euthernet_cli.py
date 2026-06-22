@@ -441,6 +441,33 @@ def command_restore_bundle(config: dict[str, Any], profile: str) -> int:
     return 0
 
 
+def command_backup_manifest(config: dict[str, Any]) -> int:
+    manifest = backup_manifest(config)
+    if not manifest.get("ok"):
+        print(manifest.get("error", "backup manifest unavailable"))
+        return 1
+    print(manifest["manifest_toml"])
+    return 0
+
+
+def command_restore_drill(config: dict[str, Any]) -> int:
+    drill = restore_drill(config)
+    if not drill.get("ok"):
+        print(drill.get("error", "restore drill unavailable"))
+        return 1
+    print(drill["drill_toml"])
+    return 0
+
+
+def command_server_map(config: dict[str, Any]) -> int:
+    server_map = eutherverse_map(config)
+    if not server_map.get("ok"):
+        print(server_map.get("error", "server map unavailable"))
+        return 1
+    print(server_map["map_toml"])
+    return 0
+
+
 def local_answer(config: dict[str, Any], question: str) -> str:
     snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
     if snapshot is None:
@@ -1146,6 +1173,351 @@ def shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def current_restore_services(snapshot: dict[str, Any], profile: str = "full") -> list[dict[str, Any]]:
+    repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), profile), profile)
+    return service_restore_plan(repos, profile)
+
+
+def backup_item_for_path(service: dict[str, Any], path: str) -> dict[str, str]:
+    lower = path.lower()
+    if any(token in lower for token in ["state", "cache", "tools", "models", ".venv"]):
+        category = "rebuildable"
+        sensitivity = "low"
+        action = "restore from cache if available, otherwise regenerate"
+    elif any(token in lower for token in ["roms", "library", "audio", "data", "chats", "settings", "images", ".config", ".euther-host", ".euther-bridge", "/srv"]):
+        category = "critical"
+        sensitivity = "private"
+        action = "restore from backup before service verification"
+    else:
+        category = "review"
+        sensitivity = "unknown"
+        action = "inspect during restore drill"
+    return {
+        "service": service["name"],
+        "path": path,
+        "category": category,
+        "sensitivity": sensitivity,
+        "action": action,
+    }
+
+
+def toml_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def toml_array(values: list[str]) -> str:
+    return "[" + ", ".join(toml_string(value) for value in values) + "]"
+
+
+def backup_manifest_toml(snapshot: dict[str, Any], items: list[dict[str, str]], critical_count: int, rebuildable_count: int) -> str:
+    lines = [
+        "[manifest]",
+        f"collected_at = {toml_string(snapshot.get('collected_at', ''))}",
+        f"server = {toml_string(snapshot.get('server', {}).get('name', ''))}",
+        f"critical_count = {critical_count}",
+        f"rebuildable_count = {rebuildable_count}",
+        "",
+    ]
+    for item in items:
+        lines.extend(
+            [
+                "[[path]]",
+                f"service = {toml_string(item['service'])}",
+                f"path = {toml_string(item['path'])}",
+                f"category = {toml_string(item['category'])}",
+                f"sensitivity = {toml_string(item['sensitivity'])}",
+                f"restore_action = {toml_string(item['action'])}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def backup_manifest(config: dict[str, Any]) -> dict[str, Any]:
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first"}
+
+    services = current_restore_services(snapshot, "full")
+    items = [
+        backup_item_for_path(service, path)
+        for service in services
+        for path in service.get("persistent_paths", [])
+    ]
+    critical_count = sum(1 for item in items if item["category"] == "critical")
+    rebuildable_count = sum(1 for item in items if item["category"] == "rebuildable")
+    lines = [
+        "# EutherNet Backup Manifest",
+        "",
+        f"- Snapshot: `{snapshot.get('collected_at', '')}`",
+        f"- Services: `{len(services)}`",
+        f"- Critical paths: `{critical_count}`",
+        f"- Rebuildable/cache paths: `{rebuildable_count}`",
+        "",
+        "| Service | Path | Category | Sensitivity | Restore action |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for item in items:
+        lines.append(
+            f"| {item['service']} | `{item['path']}` | {item['category']} | "
+            f"{item['sensitivity']} | {item['action']} |"
+        )
+    manifest_toml = backup_manifest_toml(snapshot, items, critical_count, rebuildable_count)
+    return {
+        "ok": True,
+        "collected_at": snapshot.get("collected_at", ""),
+        "services": services,
+        "items": items,
+        "critical_count": critical_count,
+        "rebuildable_count": rebuildable_count,
+        "manifest_toml": manifest_toml,
+        "manifest_md": "\n".join(lines) + "\n",
+    }
+
+
+def service_drill_result(service: dict[str, Any], repos: list[dict[str, str]], ports: set[str], failed_services: list[str]) -> dict[str, Any]:
+    repo_paths = {repo.get("path", ""): repo for repo in repos}
+    checks: list[dict[str, str]] = []
+    repo = repo_paths.get(service["repo_path"])
+    if repo:
+        if int(repo.get("dirty_lines") or "0") > 0:
+            checks.append({"status": "warn", "check": "repo", "detail": f"{repo['path']} has {repo.get('dirty_lines')} dirty status rows"})
+        else:
+            checks.append({"status": "pass", "check": "repo", "detail": f"{repo['path']} is tracked"})
+    else:
+        checks.append({"status": "warn", "check": "repo", "detail": f"{service['repo_path']} is known but not present in git inventory"})
+
+    failed_text = "\n".join(failed_services).lower()
+    for unit in service.get("systemd", []):
+        if unit.lower() in failed_text:
+            checks.append({"status": "fail", "check": "systemd", "detail": f"{unit} appears failed"})
+        else:
+            checks.append({"status": "pass", "check": "systemd", "detail": f"{unit} is not in failed-service list"})
+
+    for port in service.get("ports", []):
+        if port in ports:
+            checks.append({"status": "pass", "check": "port", "detail": f"port {port} is listening"})
+        else:
+            checks.append({"status": "warn", "check": "port", "detail": f"port {port} is not listening in latest snapshot"})
+
+    for path in service.get("persistent_paths", []):
+        item = backup_item_for_path(service, path)
+        if item["category"] == "critical":
+            checks.append({"status": "warn", "check": "backup", "detail": f"critical backup path must be verified: {path}"})
+        else:
+            checks.append({"status": "pass", "check": "backup", "detail": f"rebuildable path documented: {path}"})
+
+    fails = sum(1 for check in checks if check["status"] == "fail")
+    warns = sum(1 for check in checks if check["status"] == "warn")
+    if fails:
+        status = "red"
+    elif warns:
+        status = "yellow"
+    else:
+        status = "green"
+    score = max(0, 100 - fails * 35 - warns * 8)
+    return {"service": service["name"], "status": status, "score": score, "checks": checks}
+
+
+def restore_drill_toml(snapshot: dict[str, Any], overall_status: str, overall_score: int, results: list[dict[str, Any]]) -> str:
+    lines = [
+        "[drill]",
+        f"collected_at = {toml_string(snapshot.get('collected_at', ''))}",
+        f"server = {toml_string(snapshot.get('server', {}).get('name', ''))}",
+        f"overall_status = {toml_string(overall_status)}",
+        f"overall_score = {overall_score}",
+        "",
+    ]
+    for result in results:
+        lines.extend(
+            [
+                "[[service]]",
+                f"name = {toml_string(result['service'])}",
+                f"status = {toml_string(result['status'])}",
+                f"score = {result['score']}",
+                "",
+            ]
+        )
+        for check in result["checks"]:
+            lines.extend(
+                [
+                    "[[service.check]]",
+                    f"status = {toml_string(check['status'])}",
+                    f"name = {toml_string(check['check'])}",
+                    f"detail = {toml_string(check['detail'])}",
+                    "",
+                ]
+            )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def restore_drill(config: dict[str, Any]) -> dict[str, Any]:
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first"}
+
+    repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), "full"), "full")
+    services = service_restore_plan(repos, "full")
+    ports = parse_listening_ports(
+        snapshot.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", "")
+    )
+    failed_services = failed_service_lines(
+        snapshot.get("collectors", {}).get("systemd", {}).get("failed_services", {}).get("stdout", "")
+    )
+    results = [service_drill_result(service, repos, ports, failed_services) for service in services]
+    overall_score = round(sum(result["score"] for result in results) / len(results)) if results else 0
+    overall_status = "green"
+    if any(result["status"] == "red" for result in results):
+        overall_status = "red"
+    elif any(result["status"] == "yellow" for result in results):
+        overall_status = "yellow"
+
+    lines = [
+        "# EutherNet Restore Drill",
+        "",
+        f"- Snapshot: `{snapshot.get('collected_at', '')}`",
+        f"- Overall: `{overall_status}` ({overall_score}/100)",
+        f"- Services: `{len(results)}`",
+        "",
+    ]
+    for result in results:
+        lines.extend(
+            [
+                f"## {result['service']}",
+                "",
+                f"- Status: `{result['status']}`",
+                f"- Score: `{result['score']}/100`",
+                "",
+            ]
+        )
+        for check in result["checks"]:
+            lines.append(f"- `{check['status']}` {check['check']}: {check['detail']}")
+        lines.append("")
+    drill_toml = restore_drill_toml(snapshot, overall_status, overall_score, results)
+
+    return {
+        "ok": True,
+        "collected_at": snapshot.get("collected_at", ""),
+        "overall_status": overall_status,
+        "overall_score": overall_score,
+        "results": results,
+        "drill_toml": drill_toml,
+        "drill_md": "\n".join(lines).rstrip() + "\n",
+    }
+
+
+def server_map_toml(snapshot: dict[str, Any], nodes: list[dict[str, str]], edges: list[dict[str, str]], ports: list[str], image_prompt: str) -> str:
+    lines = [
+        "[map]",
+        f"collected_at = {toml_string(snapshot.get('collected_at', ''))}",
+        f"server = {toml_string(snapshot.get('server', {}).get('name', ''))}",
+        f"ports = {toml_array(ports)}",
+        f"image_prompt = {toml_string(image_prompt)}",
+        "",
+    ]
+    for node in nodes:
+        lines.extend(
+            [
+                "[[node]]",
+                f"id = {toml_string(node['id'])}",
+                f"label = {toml_string(node['label'])}",
+                f"type = {toml_string(node['type'])}",
+                "",
+            ]
+        )
+    for edge in edges:
+        lines.extend(
+            [
+                "[[edge]]",
+                f"from = {toml_string(edge['from'])}",
+                f"to = {toml_string(edge['to'])}",
+                f"label = {toml_string(edge['label'])}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first"}
+
+    repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), "full"), "full")
+    services = service_restore_plan(repos, "full")
+    ports = sorted(
+        parse_listening_ports(
+            snapshot.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", "")
+        ),
+        key=port_sort_key,
+    )
+    nodes: list[dict[str, str]] = [
+        {"id": "internet", "label": "Internet", "type": "external"},
+        {"id": "caddy", "label": "Caddy / apothictech.se", "type": "proxy"},
+        {"id": "server", "label": snapshot.get("server", {}).get("name", "EutherServer"), "type": "host"},
+    ]
+    edges: list[dict[str, str]] = [
+        {"from": "internet", "to": "caddy", "label": "443/80"},
+        {"from": "caddy", "to": "server", "label": "reverse proxy"},
+    ]
+    for service in services:
+        service_id = service["name"].lower()
+        nodes.append({"id": service_id, "label": service["name"], "type": "service"})
+        edges.append({"from": "server", "to": service_id, "label": ", ".join(service.get("ports", []))})
+        repo_id = f"{service_id}-repo"
+        nodes.append({"id": repo_id, "label": pathlib.Path(service["repo_path"]).name, "type": "repo"})
+        edges.append({"from": repo_id, "to": service_id, "label": "deploys"})
+    nodes.extend(
+        [
+            {"id": "ollama", "label": "Local Ollama / qwen3-coder", "type": "ai"},
+            {"id": "imagegen", "label": "Image Generator", "type": "ai"},
+            {"id": "backups", "label": "Backup Data", "type": "storage"},
+        ]
+    )
+    edges.extend(
+        [
+            {"from": "eutherpunk", "to": "ollama", "label": "chat model"},
+            {"from": "eutherpunk", "to": "imagegen", "label": "future map render"},
+            {"from": "backups", "to": "eutherbooks", "label": "library/audio"},
+            {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data"},
+        ]
+    )
+    lines = [
+        "# EutherVerse Server Map",
+        "",
+        f"- Snapshot: `{snapshot.get('collected_at', '')}`",
+        f"- Nodes: `{len(nodes)}`",
+        f"- Edges: `{len(edges)}`",
+        f"- Listening ports observed: `{', '.join(ports)}`",
+        "",
+        "## Nodes",
+        "",
+    ]
+    lines.extend(f"- `{node['id']}` ({node['type']}): {node['label']}" for node in nodes)
+    lines.extend(["", "## Edges", ""])
+    lines.extend(f"- `{edge['from']}` -> `{edge['to']}`: {edge['label']}" for edge in edges)
+    service_names = ", ".join(service["name"] for service in services)
+    image_prompt = (
+        "Create a detailed cyberpunk network map of the EutherVerse home server. "
+        "Show a central server tower labeled EutherServer, a neon reverse proxy gate labeled apothictech.se/Caddy, "
+        f"service districts labeled {service_names}, local AI cores labeled Ollama qwen3-coder and Image Generator, "
+        "backup vaults for /srv, ROMs, EutherBooks library/audio, and glowing data links annotated with ports. "
+        "Style: readable technical diagram, isometric cyberpunk city, dark background, neon cyan magenta amber accents, "
+        "clear labels, no logos, no tiny unreadable text."
+    )
+    map_toml = server_map_toml(snapshot, nodes, edges, ports, image_prompt)
+    return {
+        "ok": True,
+        "collected_at": snapshot.get("collected_at", ""),
+        "nodes": nodes,
+        "edges": edges,
+        "ports": ports,
+        "map_toml": map_toml,
+        "map_md": "\n".join(lines) + "\n",
+        "image_prompt": image_prompt,
+    }
+
+
 def ai_answer(config: dict[str, Any], question: str, local_context: str) -> str | None:
     ai = config.get("ai", {})
     if not ai.get("enabled"):
@@ -1263,6 +1635,9 @@ def main(argv: list[str]) -> int:
     subparsers.add_parser("summary")
     subparsers.add_parser("changes")
     subparsers.add_parser("restore-plan")
+    subparsers.add_parser("backup-manifest")
+    subparsers.add_parser("restore-drill")
+    subparsers.add_parser("server-map")
 
     restore_bundle_parser = subparsers.add_parser("restore-bundle")
     restore_bundle_parser.add_argument("--profile", default="full")
@@ -1288,6 +1663,12 @@ def main(argv: list[str]) -> int:
         return command_restore_plan(config)
     if args.command == "restore-bundle":
         return command_restore_bundle(config, args.profile)
+    if args.command == "backup-manifest":
+        return command_backup_manifest(config)
+    if args.command == "restore-drill":
+        return command_restore_drill(config)
+    if args.command == "server-map":
+        return command_server_map(config)
     if args.command == "ask":
         return command_ask(config, args.question)
     if args.command == "run":

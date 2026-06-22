@@ -44,6 +44,9 @@ make changes
 make restore-plan
 make restore-bundle PROFILE=full
 make restore-bundle PROFILE=backup
+make backup-manifest
+make restore-drill
+make server-map
 make ask Q="hur mår servern?"
 make ask Q="vilka repos finns?"
 ```
@@ -118,6 +121,9 @@ GET  /api/euthernet/changes
 GET  /api/euthernet/restore-plan
 GET  /api/euthernet/restore-bundle?profile=full
 GET  /api/euthernet/restore-bundle?profile=backup
+GET  /api/euthernet/backup-manifest
+GET  /api/euthernet/restore-drill
+GET  /api/euthernet/map
 POST /api/euthernet/ask
 POST /api/euthernet/refresh
 POST /api/euthernet/run
@@ -134,6 +140,9 @@ curl -fsS http://127.0.0.1:8791/api/euthernet/changes
 curl -fsS http://127.0.0.1:8791/api/euthernet/restore-plan
 curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=full'
 curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=backup'
+curl -fsS http://127.0.0.1:8791/api/euthernet/backup-manifest
+curl -fsS http://127.0.0.1:8791/api/euthernet/restore-drill
+curl -fsS http://127.0.0.1:8791/api/euthernet/map
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \
   -H 'Content-Type: application/json' \
   -d '{"question":"vilka repos är dirty?"}'
@@ -167,6 +176,9 @@ Recommended EutherPunk chat tools:
 - `server_changes` -> `GET /api/euthernet/changes`
 - `server_restore_plan` -> `GET /api/euthernet/restore-plan`
 - `server_restore_bundle` -> `GET /api/euthernet/restore-bundle?profile=full|backup`
+- `server_backup_manifest` -> `GET /api/euthernet/backup-manifest`
+- `server_restore_drill` -> `GET /api/euthernet/restore-drill`
+- `server_map` -> `GET /api/euthernet/map`
 - `server_refresh` -> `POST /api/euthernet/refresh`
 - `server_run` -> `POST /api/euthernet/run`
 
@@ -177,9 +189,13 @@ For the first chat UI pass, slash commands are enough:
 /server repos
 /server summary
 /server changes
+/server backup
 /server restore plan
+/server restore drill
 /server restore bundle
 /server restore bundle backup
+/server map
+/server map image
 /server full report
 /server refresh
 /server run disk
@@ -247,6 +263,17 @@ The restore bundle currently emits service-aware restore steps for known repos
 when they appear in the latest inventory: EutherNet, EutherPunk, EutherOxide,
 and EutherBooks. Each service entry includes package candidates, persistent
 paths, ordered commands, verification commands, and notes for Codex.
+
+## TOML Artifacts
+
+The HTTP API uses JSON as a transport envelope, but generated recovery artifacts
+intended for humans, Codex, and chat are TOML fields:
+
+- `manifest_toml` from `/api/euthernet/backup-manifest`
+- `drill_toml` from `/api/euthernet/restore-drill`
+- `map_toml` from `/api/euthernet/map`
+
+`/server map image` returns the cyberpunk image prompt derived from `map_toml`.
 
 ## Safety Rules
 
