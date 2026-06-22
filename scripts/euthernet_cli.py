@@ -20,6 +20,25 @@ def latest_snapshot(state_root: pathlib.Path) -> dict[str, Any] | None:
     return json.loads(snapshots[-1].read_text(encoding="utf-8"))
 
 
+def recent_snapshots(state_root: pathlib.Path, count: int = 2) -> list[dict[str, Any]]:
+    snapshots = sorted(state_root.glob("snapshot-*.json"))[-count:]
+    return [json.loads(path.read_text(encoding="utf-8")) for path in snapshots]
+
+
+def recent_healthy_snapshots(state_root: pathlib.Path, count: int = 2) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    for path in reversed(sorted(state_root.glob("snapshot-*.json"))):
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        if not snapshot.get("ssh_preflight", {}).get("ok"):
+            continue
+        if not snapshot.get("collectors", {}).get("git_repositories", {}).get("scan", {}).get("ok"):
+            continue
+        snapshots.append(snapshot)
+        if len(snapshots) == count:
+            break
+    return list(reversed(snapshots))
+
+
 def parse_repos(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     scan = snapshot.get("collectors", {}).get("git_repositories", {}).get("scan", {})
     repos: list[dict[str, str]] = []
@@ -37,6 +56,105 @@ def parse_repos(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     if current:
         repos.append(current)
     return repos
+
+
+def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
+    repos = parse_repos(snapshot)
+    dirty_repos = [repo for repo in repos if int(repo.get("dirty_lines") or "0") > 0]
+    failed_text = (
+        snapshot.get("collectors", {})
+        .get("systemd", {})
+        .get("failed_services", {})
+        .get("stdout", "")
+    )
+    failed_services = failed_service_lines(failed_text)
+    disk_text = (
+        snapshot.get("collectors", {})
+        .get("system", {})
+        .get("disk", {})
+        .get("stdout", "")
+    )
+    disk_warnings = disk_usage_warnings(disk_text)
+    listening_text = (
+        snapshot.get("collectors", {})
+        .get("network", {})
+        .get("listening_tcp_udp", {})
+        .get("stdout", "")
+    )
+    return {
+        "collected_at": snapshot.get("collected_at", ""),
+        "server": snapshot.get("server", {}),
+        "ssh_preflight": bool(snapshot.get("ssh_preflight", {}).get("ok")),
+        "repository_count": len(repos),
+        "dirty_repository_count": len(dirty_repos),
+        "dirty_repositories": dirty_repos,
+        "failed_service_count": len(failed_services),
+        "failed_services": failed_services,
+        "disk_warning_count": len(disk_warnings),
+        "disk_warnings": disk_warnings,
+        "listening_port_count": len(parse_listening_ports(listening_text)),
+    }
+
+
+def failed_service_lines(value: str) -> list[str]:
+    lines: list[str] = []
+    for line in value.splitlines():
+        line = line.strip()
+        if not line or line.startswith("UNIT ") or line.startswith("Legend:") or " loaded units listed" in line:
+            continue
+        if " loaded failed " in line:
+            lines.append(line)
+    return lines
+
+
+def disk_usage_warnings(value: str, threshold: int = 85) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for line in value.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 7:
+            continue
+        use = parts[5]
+        if not use.endswith("%"):
+            continue
+        try:
+            used_percent = int(use[:-1])
+        except ValueError:
+            continue
+        if used_percent >= threshold:
+            warnings.append(
+                {
+                    "filesystem": parts[0],
+                    "type": parts[1],
+                    "size": parts[2],
+                    "used": parts[3],
+                    "available": parts[4],
+                    "used_percent": used_percent,
+                    "mount": " ".join(parts[6:]),
+                }
+            )
+    return warnings
+
+
+def parse_listening_ports(value: str) -> set[str]:
+    ports: set[str] = set()
+    for line in value.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[1] != "LISTEN":
+            continue
+        local = parts[4]
+        if ":" in local:
+            ports.add(local.rsplit(":", 1)[-1])
+    return ports
+
+
+def repo_key(repo: dict[str, str]) -> str:
+    return repo.get("path", "")
+
+
+def port_sort_key(value: str) -> tuple[int, int | str]:
+    if value.isdigit():
+        return (0, int(value))
+    return (1, value)
 
 
 def command_status(config: dict[str, Any]) -> int:
@@ -81,6 +199,33 @@ def command_repos(config: dict[str, Any]) -> int:
         print(f"{repo['path']} [{branch} {repo.get('head', '')}] {marker}")
         if repo.get("remote"):
             print(f"  remote: {repo['remote']}")
+    return 0
+
+
+def command_summary(config: dict[str, Any]) -> int:
+    summary = operational_summary(config)
+    if not summary.get("ok"):
+        print(summary.get("error", "summary unavailable"))
+        return 1
+    print(summary["summary"])
+    return 0
+
+
+def command_changes(config: dict[str, Any]) -> int:
+    changes = drift_changes(config)
+    if not changes.get("ok"):
+        print(changes.get("error", "changes unavailable"))
+        return 1
+    print(changes["changes"])
+    return 0
+
+
+def command_restore_plan(config: dict[str, Any]) -> int:
+    plan = restore_plan(config)
+    if not plan.get("ok"):
+        print(plan.get("error", "restore plan unavailable"))
+        return 1
+    print(plan["plan"])
     return 0
 
 
@@ -274,6 +419,205 @@ def full_report(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def operational_summary(config: dict[str, Any]) -> dict[str, Any]:
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first", "summary": ""}
+
+    summary = snapshot_summary(snapshot)
+    lines = [
+        f"EutherNet summary for {summary['server'].get('name', 'server')}",
+        f"- Snapshot: {summary['collected_at']}",
+        f"- Preflight: {'ok' if summary['ssh_preflight'] else 'failed'}",
+        f"- Repositories: {summary['repository_count']} total, {summary['dirty_repository_count']} dirty",
+        f"- Failed services: {summary['failed_service_count']}",
+        f"- Disk warnings >=85%: {summary['disk_warning_count']}",
+        f"- Listening TCP ports: {summary['listening_port_count']}",
+    ]
+    if summary["dirty_repositories"]:
+        lines.append("")
+        lines.append("Dirty repositories:")
+        for repo in summary["dirty_repositories"]:
+            lines.append(f"- {repo['path']} ({repo.get('dirty_lines', '0')} status rows)")
+    if summary["failed_services"]:
+        lines.append("")
+        lines.append("Failed services:")
+        lines.extend(f"- {line}" for line in summary["failed_services"])
+    if summary["disk_warnings"]:
+        lines.append("")
+        lines.append("Disk warnings:")
+        for warning in summary["disk_warnings"]:
+            lines.append(
+                f"- {warning['mount']}: {warning['used_percent']}% used "
+                f"({warning['used']} / {warning['size']})"
+            )
+
+    return {"ok": True, **summary, "summary": "\n".join(lines)}
+
+
+def drift_changes(config: dict[str, Any]) -> dict[str, Any]:
+    state_root = pathlib.Path(config["server"].get("state_root", "state"))
+    snapshots = recent_healthy_snapshots(state_root, count=2)
+    if not snapshots:
+        return {"ok": False, "error": "no snapshot exists; run refresh first", "changes": ""}
+    if len(snapshots) == 1:
+        summary = snapshot_summary(snapshots[0])
+        return {
+            "ok": True,
+            "baseline_only": True,
+            "from": "",
+            "to": summary["collected_at"],
+            "changes": "Only one snapshot exists. Run another refresh to detect drift.",
+            "items": [],
+        }
+
+    previous, current = snapshots
+    previous_repos = {repo_key(repo): repo for repo in parse_repos(previous)}
+    current_repos = {repo_key(repo): repo for repo in parse_repos(current)}
+
+    items: list[dict[str, str]] = []
+    for path in sorted(set(current_repos) - set(previous_repos)):
+        items.append({"type": "repo_added", "message": path})
+    for path in sorted(set(previous_repos) - set(current_repos)):
+        items.append({"type": "repo_removed", "message": path})
+    for path in sorted(set(previous_repos) & set(current_repos)):
+        old = previous_repos[path]
+        new = current_repos[path]
+        if old.get("head") != new.get("head"):
+            items.append(
+                {
+                    "type": "repo_head_changed",
+                    "message": f"{path}: {old.get('head', '')} -> {new.get('head', '')}",
+                }
+            )
+        if old.get("dirty_lines", "0") != new.get("dirty_lines", "0"):
+            items.append(
+                {
+                    "type": "repo_dirty_changed",
+                    "message": f"{path}: {old.get('dirty_lines', '0')} -> {new.get('dirty_lines', '0')} status rows",
+                }
+            )
+
+    old_failed = set(failed_service_lines(previous.get("collectors", {}).get("systemd", {}).get("failed_services", {}).get("stdout", "")))
+    new_failed = set(failed_service_lines(current.get("collectors", {}).get("systemd", {}).get("failed_services", {}).get("stdout", "")))
+    for line in sorted(new_failed - old_failed):
+        items.append({"type": "failed_service_added", "message": line})
+    for line in sorted(old_failed - new_failed):
+        items.append({"type": "failed_service_cleared", "message": line})
+
+    old_ports = parse_listening_ports(previous.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", ""))
+    new_ports = parse_listening_ports(current.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", ""))
+    for port in sorted(new_ports - old_ports, key=port_sort_key):
+        items.append({"type": "port_added", "message": port})
+    for port in sorted(old_ports - new_ports, key=port_sort_key):
+        items.append({"type": "port_removed", "message": port})
+
+    lines = [
+        f"EutherNet changes: {previous.get('collected_at', '')} -> {current.get('collected_at', '')}",
+        "",
+    ]
+    if items:
+        lines.extend(f"- {item['type']}: {item['message']}" for item in items)
+    else:
+        lines.append("- No tracked drift detected.")
+
+    return {
+        "ok": True,
+        "baseline_only": False,
+        "from": previous.get("collected_at", ""),
+        "to": current.get("collected_at", ""),
+        "items": items,
+        "changes": "\n".join(lines),
+    }
+
+
+def restore_plan(config: dict[str, Any]) -> dict[str, Any]:
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first", "plan": ""}
+
+    summary = snapshot_summary(snapshot)
+    repos = parse_repos(snapshot)
+    running = snapshot.get("collectors", {}).get("systemd", {}).get("running_services", {}).get("stdout", "")
+    timers = snapshot.get("collectors", {}).get("systemd", {}).get("timers", {}).get("stdout", "")
+    listening = snapshot.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", "")
+
+    lines = [
+        f"# Restore Plan: {summary['server'].get('name', 'server')}",
+        "",
+        f"- Source snapshot: `{summary['collected_at']}`",
+        f"- LAN host: `{summary['server'].get('lan_host', '')}`",
+        f"- Public host: `{summary['server'].get('public_host', '')}`",
+        "",
+        "## 1. Base System",
+        "",
+        "- Install a fresh OS with SSH access for user `nichlas`.",
+        "- Restore SSH public key authentication before disabling password login.",
+        "- Install required base packages: `git`, `curl`, `python3`, `systemd`, and service-specific runtimes.",
+        "- Recreate persistent mount points and verify disk capacity before restoring data.",
+        "",
+        "## 2. Repositories",
+        "",
+    ]
+    for repo in repos:
+        remote = repo.get("remote", "")
+        path = repo.get("path", "")
+        branch = repo.get("branch", "")
+        if remote:
+            checkout = f"git clone {remote} {path}"
+            if branch:
+                checkout += f" && git -C {path} checkout {branch}"
+        else:
+            checkout = f"restore local-only repository/path: {path}"
+        dirty = " (has local changes in snapshot)" if int(repo.get("dirty_lines") or "0") > 0 else ""
+        lines.append(f"- `{path}`{dirty}: `{checkout}`")
+
+    lines.extend(["", "## 3. Services", ""])
+    important_services = [
+        line.split()[0]
+        for line in running.splitlines()
+        if any(token in line.lower() for token in ["euther", "caddy", "ssh", "ollama"])
+    ]
+    if important_services:
+        for service in important_services:
+            lines.append(f"- Recreate and enable `{service}`.")
+    else:
+        lines.append("- Recreate service units from repo/deploy folders and enable them with systemd.")
+
+    lines.extend(["", "## 4. Timers", ""])
+    important_timers = []
+    for line in timers.splitlines()[1:]:
+        if "euther" not in line.lower():
+            continue
+        for part in line.split():
+            if part.endswith(".timer"):
+                important_timers.append(part)
+                break
+    if important_timers:
+        for timer in important_timers:
+            lines.append(f"- Recreate and enable `{timer}`.")
+    else:
+        lines.append("- Recreate relevant cleanup, backup, and inventory timers.")
+
+    lines.extend(["", "## 5. Network", ""])
+    ports = sorted(parse_listening_ports(listening), key=port_sort_key)
+    if ports:
+        lines.append("- Verify these listening TCP ports after restore: `" + ", ".join(ports) + "`.")
+    lines.append("- Restore reverse proxy routes for EutherOxide, EutherPunk, EutherBooks, and EutherNet local-only access.")
+
+    lines.extend(["", "## 6. Verification", ""])
+    lines.extend(
+        [
+            "- `systemctl --user status euthernet.service eutherpunkd.service`",
+            "- `curl -fsS http://127.0.0.1:8791/api/euthernet/status`",
+            "- `curl -fsS http://127.0.0.1:8787/api/eutherpunk/status`",
+            "- From chat: `/server status`, `/server changes`, `/server full report`.",
+        ]
+    )
+
+    return {"ok": True, "collected_at": summary["collected_at"], "plan": "\n".join(lines) + "\n"}
+
+
 def ai_answer(config: dict[str, Any], question: str, local_context: str) -> str | None:
     ai = config.get("ai", {})
     if not ai.get("enabled"):
@@ -388,6 +732,9 @@ def main(argv: list[str]) -> int:
 
     subparsers.add_parser("status")
     subparsers.add_parser("repos")
+    subparsers.add_parser("summary")
+    subparsers.add_parser("changes")
+    subparsers.add_parser("restore-plan")
 
     ask_parser = subparsers.add_parser("ask")
     ask_parser.add_argument("question")
@@ -402,6 +749,12 @@ def main(argv: list[str]) -> int:
         return command_status(config)
     if args.command == "repos":
         return command_repos(config)
+    if args.command == "summary":
+        return command_summary(config)
+    if args.command == "changes":
+        return command_changes(config)
+    if args.command == "restore-plan":
+        return command_restore_plan(config)
     if args.command == "ask":
         return command_ask(config, args.question)
     if args.command == "run":

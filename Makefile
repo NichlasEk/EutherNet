@@ -5,6 +5,9 @@
 .PHONY: run
 .PHONY: mcp
 .PHONY: serve
+.PHONY: summary
+.PHONY: changes
+.PHONY: restore-plan
 
 inventory:
 	python scripts/euthernet_inventory.py --config euthernet.toml
@@ -17,6 +20,15 @@ repos:
 
 ask:
 	python scripts/euthernet_cli.py --config euthernet.toml ask "$(Q)"
+
+summary:
+	python scripts/euthernet_cli.py --config euthernet.toml summary
+
+changes:
+	python scripts/euthernet_cli.py --config euthernet.toml changes
+
+restore-plan:
+	python scripts/euthernet_cli.py --config euthernet.toml restore-plan
 
 run:
 	python scripts/euthernet_cli.py --config euthernet.toml run "$(CMD)"

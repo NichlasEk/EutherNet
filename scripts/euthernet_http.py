@@ -10,7 +10,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from euthernet_cli import answer_question, full_report, latest_snapshot, parse_repos, run_allowed_command
+from euthernet_cli import (
+    answer_question,
+    drift_changes,
+    full_report,
+    latest_snapshot,
+    operational_summary,
+    parse_repos,
+    restore_plan,
+    run_allowed_command,
+)
 from euthernet_inventory import collect, load_config, write_outputs
 
 
@@ -56,6 +65,15 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/report":
             self.handle_report()
+            return
+        if path == "/api/euthernet/summary":
+            self.handle_summary()
+            return
+        if path == "/api/euthernet/changes":
+            self.handle_changes()
+            return
+        if path == "/api/euthernet/restore-plan":
+            self.handle_restore_plan()
             return
         self.write_error(HTTPStatus.NOT_FOUND, "unknown endpoint")
 
@@ -135,6 +153,27 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             self.write_error(HTTPStatus.NOT_FOUND, str(report.get("error", "report unavailable")))
             return
         self.write_json(HTTPStatus.OK, report)
+
+    def handle_summary(self) -> None:
+        summary = operational_summary(self.config)
+        if not summary.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(summary.get("error", "summary unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, summary)
+
+    def handle_changes(self) -> None:
+        changes = drift_changes(self.config)
+        if not changes.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(changes.get("error", "changes unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, changes)
+
+    def handle_restore_plan(self) -> None:
+        plan = restore_plan(self.config)
+        if not plan.get("ok"):
+            self.write_error(HTTPStatus.NOT_FOUND, str(plan.get("error", "restore plan unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, plan)
 
     def handle_ask(self) -> None:
         try:

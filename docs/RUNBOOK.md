@@ -39,6 +39,9 @@ After a successful inventory run, ask local questions from the latest snapshot:
 ```sh
 make status
 make repos
+make summary
+make changes
+make restore-plan
 make ask Q="hur mår servern?"
 make ask Q="vilka repos finns?"
 ```
@@ -108,6 +111,9 @@ GET  /api/euthernet/repos
 GET  /api/euthernet/inventory
 GET  /api/euthernet/commands
 GET  /api/euthernet/report
+GET  /api/euthernet/summary
+GET  /api/euthernet/changes
+GET  /api/euthernet/restore-plan
 POST /api/euthernet/ask
 POST /api/euthernet/refresh
 POST /api/euthernet/run
@@ -119,6 +125,9 @@ Examples:
 curl -fsS http://127.0.0.1:8791/api/euthernet/status
 curl -fsS http://127.0.0.1:8791/api/euthernet/repos
 curl -fsS http://127.0.0.1:8791/api/euthernet/report
+curl -fsS http://127.0.0.1:8791/api/euthernet/summary
+curl -fsS http://127.0.0.1:8791/api/euthernet/changes
+curl -fsS http://127.0.0.1:8791/api/euthernet/restore-plan
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \
   -H 'Content-Type: application/json' \
   -d '{"question":"vilka repos är dirty?"}'
@@ -148,6 +157,9 @@ Recommended EutherPunk chat tools:
 - `server_status` -> `GET /api/euthernet/status`
 - `server_repos` -> `GET /api/euthernet/repos`
 - `server_full_report` -> `GET /api/euthernet/report`
+- `server_summary` -> `GET /api/euthernet/summary`
+- `server_changes` -> `GET /api/euthernet/changes`
+- `server_restore_plan` -> `GET /api/euthernet/restore-plan`
 - `server_refresh` -> `POST /api/euthernet/refresh`
 - `server_run` -> `POST /api/euthernet/run`
 
@@ -156,6 +168,9 @@ For the first chat UI pass, slash commands are enough:
 ```text
 /server status
 /server repos
+/server summary
+/server changes
+/server restore plan
 /server full report
 /server refresh
 /server run disk
@@ -171,9 +186,13 @@ Install the user service on the EutherOxide server:
 ```sh
 mkdir -p ~/.config/systemd/user
 cp deploy/euthernet.service ~/.config/systemd/user/euthernet.service
+cp deploy/euthernet-refresh.service ~/.config/systemd/user/euthernet-refresh.service
+cp deploy/euthernet-refresh.timer ~/.config/systemd/user/euthernet-refresh.timer
 systemctl --user daemon-reload
 systemctl --user enable --now euthernet.service
+systemctl --user enable --now euthernet-refresh.timer
 systemctl --user status euthernet.service
+systemctl --user list-timers euthernet-refresh.timer
 ```
 
 Verify locally on the server:
