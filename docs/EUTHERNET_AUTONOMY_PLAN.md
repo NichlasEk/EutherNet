@@ -18,10 +18,10 @@ This checklist tracks the next EutherNet/EutherPunk integration slice.
 - [x] Add `/api/euthernet/restore-plan` and `/server restore plan`.
 - [x] Add natural-language EutherPunk routing for common server questions.
 - [x] Verify Python and Go tests locally.
-- [ ] Commit and push EutherNet changes.
-- [ ] Commit and push EutherPunk changes.
-- [ ] Deploy both services to `192.168.32.186`.
-- [ ] Run live smoke tests through EutherPunk chat.
+- [x] Commit and push EutherNet changes.
+- [x] Commit and push EutherPunk changes.
+- [x] Deploy both services to `192.168.32.186`.
+- [x] Run live smoke tests through EutherPunk chat.
 
 ## Safety Rules
 
