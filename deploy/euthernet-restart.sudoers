@@ -1,0 +1,1 @@
+nichlas ALL=(root) NOPASSWD: /usr/bin/systemctl restart eutherhost.service, /usr/bin/systemctl is-active eutherhost.service, /usr/bin/systemctl restart caddy.service, /usr/bin/systemctl is-active caddy.service, /usr/bin/systemctl restart eutherbooks.service, /usr/bin/systemctl is-active eutherbooks.service
