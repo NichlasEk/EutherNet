@@ -5,6 +5,7 @@
 Unlock the SSH key for the EutherOxide server before running the collector:
 
 ```sh
+eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/euther_server
 ```
 
@@ -17,6 +18,10 @@ make inventory
 The collector uses `BatchMode=yes`, so it will not prompt for a password or
 passphrase. If the key is not available through the agent, it fails fast and
 writes a preflight error instead of repeatedly trying server commands.
+
+If `ssh-add` prints `Could not open a connection to your authentication agent`,
+the shell does not have an active SSH agent. Run the `eval "$(ssh-agent -s)"`
+line above in the same terminal, then run `ssh-add` again.
 
 ## Outputs
 
