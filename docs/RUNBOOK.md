@@ -42,6 +42,8 @@ make repos
 make summary
 make changes
 make restore-plan
+make restore-bundle PROFILE=full
+make restore-bundle PROFILE=backup
 make ask Q="hur mår servern?"
 make ask Q="vilka repos finns?"
 ```
@@ -114,6 +116,8 @@ GET  /api/euthernet/report
 GET  /api/euthernet/summary
 GET  /api/euthernet/changes
 GET  /api/euthernet/restore-plan
+GET  /api/euthernet/restore-bundle?profile=full
+GET  /api/euthernet/restore-bundle?profile=backup
 POST /api/euthernet/ask
 POST /api/euthernet/refresh
 POST /api/euthernet/run
@@ -128,6 +132,8 @@ curl -fsS http://127.0.0.1:8791/api/euthernet/report
 curl -fsS http://127.0.0.1:8791/api/euthernet/summary
 curl -fsS http://127.0.0.1:8791/api/euthernet/changes
 curl -fsS http://127.0.0.1:8791/api/euthernet/restore-plan
+curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=full'
+curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=backup'
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \
   -H 'Content-Type: application/json' \
   -d '{"question":"vilka repos är dirty?"}'
@@ -160,6 +166,7 @@ Recommended EutherPunk chat tools:
 - `server_summary` -> `GET /api/euthernet/summary`
 - `server_changes` -> `GET /api/euthernet/changes`
 - `server_restore_plan` -> `GET /api/euthernet/restore-plan`
+- `server_restore_bundle` -> `GET /api/euthernet/restore-bundle?profile=full|backup`
 - `server_refresh` -> `POST /api/euthernet/refresh`
 - `server_run` -> `POST /api/euthernet/run`
 
@@ -171,6 +178,8 @@ For the first chat UI pass, slash commands are enough:
 /server summary
 /server changes
 /server restore plan
+/server restore bundle
+/server restore bundle backup
 /server full report
 /server refresh
 /server run disk
@@ -200,6 +209,37 @@ Verify locally on the server:
 ```sh
 curl -fsS http://127.0.0.1:8791/api/euthernet/status
 ```
+
+## Fresh Hardware Restore Bundle
+
+The restore bundle is intended for a fresh Debian install where Codex should
+bring the server back in a deterministic order.
+
+On the new machine:
+
+```sh
+git clone https://github.com/NichlasEk/EutherNet /home/nichlas/EutherNet
+cd /home/nichlas/EutherNet
+make restore-bundle PROFILE=full
+```
+
+Then start Codex in `/home/nichlas/EutherNet` and give it the generated Codex
+prompt. Codex should follow the runbook chronologically, run the bootstrap
+script step by step, and stop if secrets, private keys, or backups are missing.
+
+Profiles:
+
+- `full`: restore the EutherNet control plane, clone all remote-backed repos
+  from the latest inventory, and continue service-specific recovery from each
+  repo's own deploy docs.
+- `backup`: restore the EutherNet control plane and key Euther repos for a
+  smaller diagnostics/backup host.
+
+The bundle separates base packages from observed packages:
+
+- Base packages are the small apt set installed by the bootstrap script.
+- Observed packages come from the latest server snapshot using `dpkg-query` or
+  `pacman -Q`. Treat them as a comparison target, not a blind install list.
 
 ## Safety Rules
 

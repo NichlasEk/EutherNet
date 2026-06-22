@@ -35,6 +35,12 @@ SYSTEM_COMMANDS = [
     RemoteCommand("uptime", "uptime"),
     RemoteCommand("disk", "df -hT"),
     RemoteCommand("memory", "free -h"),
+    RemoteCommand(
+        "packages",
+        "if command -v dpkg-query >/dev/null 2>&1; then dpkg-query -W -f='${binary:Package}\\t${Version}\\n'; "
+        "elif command -v pacman >/dev/null 2>&1; then pacman -Q; "
+        "else printf 'package inventory unavailable\\n'; fi",
+    ),
 ]
 
 SYSTEMD_COMMANDS = [

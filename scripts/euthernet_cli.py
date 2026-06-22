@@ -75,6 +75,12 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
         .get("stdout", "")
     )
     disk_warnings = disk_usage_warnings(disk_text)
+    package_text = (
+        snapshot.get("collectors", {})
+        .get("system", {})
+        .get("packages", {})
+        .get("stdout", "")
+    )
     listening_text = (
         snapshot.get("collectors", {})
         .get("network", {})
@@ -92,6 +98,7 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
         "failed_services": failed_services,
         "disk_warning_count": len(disk_warnings),
         "disk_warnings": disk_warnings,
+        "package_count": len(parse_packages(package_text)),
         "listening_port_count": len(parse_listening_ports(listening_text)),
     }
 
@@ -145,6 +152,22 @@ def parse_listening_ports(value: str) -> set[str]:
         if ":" in local:
             ports.add(local.rsplit(":", 1)[-1])
     return ports
+
+
+def parse_packages(value: str) -> list[dict[str, str]]:
+    packages: list[dict[str, str]] = []
+    for line in value.splitlines():
+        line = line.strip()
+        if not line or line == "package inventory unavailable":
+            continue
+        if "\t" in line:
+            name, version = line.split("\t", 1)
+        else:
+            parts = line.split(maxsplit=1)
+            name = parts[0]
+            version = parts[1] if len(parts) > 1 else ""
+        packages.append({"name": name, "version": version})
+    return packages
 
 
 def repo_key(repo: dict[str, str]) -> str:
@@ -226,6 +249,25 @@ def command_restore_plan(config: dict[str, Any]) -> int:
         print(plan.get("error", "restore plan unavailable"))
         return 1
     print(plan["plan"])
+    return 0
+
+
+def command_restore_bundle(config: dict[str, Any], profile: str) -> int:
+    bundle = restore_bundle(config, profile=profile or "full")
+    if not bundle.get("ok"):
+        print(bundle.get("error", "restore bundle unavailable"))
+        return 1
+    print(bundle["runbook"])
+    print("")
+    print("## Bootstrap Script")
+    print("")
+    print("```sh")
+    print(bundle["bootstrap_script"].rstrip())
+    print("```")
+    print("")
+    print("## Codex Prompt")
+    print("")
+    print(bundle["codex_prompt"])
     return 0
 
 
@@ -430,6 +472,7 @@ def operational_summary(config: dict[str, Any]) -> dict[str, Any]:
         f"- Snapshot: {summary['collected_at']}",
         f"- Preflight: {'ok' if summary['ssh_preflight'] else 'failed'}",
         f"- Repositories: {summary['repository_count']} total, {summary['dirty_repository_count']} dirty",
+        f"- Observed packages: {summary['package_count']}",
         f"- Failed services: {summary['failed_service_count']}",
         f"- Disk warnings >=85%: {summary['disk_warning_count']}",
         f"- Listening TCP ports: {summary['listening_port_count']}",
@@ -618,6 +661,237 @@ def restore_plan(config: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "collected_at": summary["collected_at"], "plan": "\n".join(lines) + "\n"}
 
 
+def restore_profile_repos(repos: list[dict[str, str]], profile: str) -> list[dict[str, str]]:
+    if profile == "backup":
+        preferred = ("EutherNet", "EutherPunk", "EutherOxide", "EutherBooks", "EutherMaster")
+        return [
+            repo for repo in repos
+            if repo.get("remote") and any(part in repo.get("path", "") for part in preferred)
+        ]
+    return [repo for repo in repos if repo.get("remote")]
+
+
+def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, Any]:
+    profile = (profile or "full").strip().lower()
+    if profile not in {"full", "backup"}:
+        return {"ok": False, "error": "profile must be one of: full, backup"}
+
+    snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
+    if snapshot is None:
+        return {"ok": False, "error": "no snapshot exists; run refresh first"}
+
+    summary = snapshot_summary(snapshot)
+    repos = restore_profile_repos(parse_repos(snapshot), profile)
+    server = summary["server"]
+    package_text = (
+        snapshot.get("collectors", {})
+        .get("system", {})
+        .get("packages", {})
+        .get("stdout", "")
+    )
+    observed_packages = parse_packages(package_text)
+    observed_package_names = sorted(
+        {
+            package["name"]
+            for package in observed_packages
+            if package.get("name") and ":" not in package["name"]
+        }
+    )
+    repo_commands = []
+    for repo in repos:
+        path = repo.get("path", "")
+        remote = repo.get("remote", "")
+        branch = repo.get("branch", "")
+        command = f'clone_or_update {shell_quote(remote)} {shell_quote(path)}'
+        if branch:
+            command += f" {shell_quote(branch)}"
+        repo_commands.append(command)
+
+    base_packages = "ca-certificates curl git python3 systemd"
+    if profile == "full":
+        base_packages += " caddy"
+    base_package_names = base_packages.split()
+
+    bootstrap_lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "# EutherNet generated Debian bootstrap.",
+        "# Review before running. It is intentionally conservative and repo-first.",
+        "",
+        "need_cmd() { command -v \"$1\" >/dev/null 2>&1 || { echo \"missing command: $1\" >&2; exit 1; }; }",
+        "clone_or_update() {",
+        "  remote=\"$1\"",
+        "  path=\"$2\"",
+        "  branch=\"${3:-}\"",
+        "  mkdir -p \"$(dirname \"$path\")\"",
+        "  if [ -d \"$path/.git\" ]; then",
+        "    git -C \"$path\" fetch --all --prune",
+        "    git -C \"$path\" pull --ff-only || true",
+        "  else",
+        "    git clone \"$remote\" \"$path\"",
+        "  fi",
+        "  if [ -n \"$branch\" ]; then git -C \"$path\" checkout \"$branch\"; fi",
+        "}",
+        "",
+        "if [ \"$(id -u)\" -eq 0 ]; then",
+        "  echo \"Run as the target user with sudo available, not as root.\" >&2",
+        "  exit 1",
+        "fi",
+        "",
+        "need_cmd sudo",
+        "sudo apt-get update",
+        f"sudo apt-get install -y {base_packages}",
+        "",
+        "clone_or_update https://github.com/NichlasEk/EutherNet /home/nichlas/EutherNet main",
+    ]
+    bootstrap_lines.extend(repo_commands)
+    bootstrap_lines.extend(
+        [
+            "",
+            "mkdir -p /home/nichlas/.config/systemd/user",
+            "cp /home/nichlas/EutherNet/deploy/euthernet.service /home/nichlas/.config/systemd/user/euthernet.service",
+            "cp /home/nichlas/EutherNet/deploy/euthernet-refresh.service /home/nichlas/.config/systemd/user/euthernet-refresh.service",
+            "cp /home/nichlas/EutherNet/deploy/euthernet-refresh.timer /home/nichlas/.config/systemd/user/euthernet-refresh.timer",
+            "systemctl --user daemon-reload",
+            "systemctl --user enable --now euthernet.service",
+            "systemctl --user enable --now euthernet-refresh.timer",
+            "curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/refresh",
+            "curl -fsS http://127.0.0.1:8791/api/euthernet/summary",
+        ]
+    )
+
+    runbook_lines = [
+        f"# EutherNet Codex Restore Bundle ({profile})",
+        "",
+        f"- Generated from snapshot: `{summary['collected_at']}`",
+        f"- Server name: `{server.get('name', '')}`",
+        f"- LAN host: `{server.get('lan_host', '')}`",
+        f"- Public host: `{server.get('public_host', '')}`",
+        "",
+        "## Intended Fresh-Hardware Flow",
+        "",
+        "1. Install Debian on the new hardware.",
+        "2. Create/restore user `nichlas` with sudo access.",
+        "3. Restore SSH pubkey access.",
+        "4. Clone EutherNet:",
+        "",
+        "```sh",
+        "git clone https://github.com/NichlasEk/EutherNet /home/nichlas/EutherNet",
+        "cd /home/nichlas/EutherNet",
+        "```",
+        "",
+        "5. Start Codex in this repo and give it the Codex prompt below.",
+        "6. Let Codex execute the bootstrap script step by step, validating after each phase.",
+        "",
+        "## Profile Meaning",
+        "",
+    ]
+    if profile == "full":
+        runbook_lines.extend(
+            [
+                "`full` restores the server control plane and clones all remote-backed repositories in the latest inventory.",
+                "It prepares EutherNet first, then lets Codex continue service-specific recovery from repo deploy docs.",
+            ]
+        )
+    else:
+        runbook_lines.extend(
+            [
+                "`backup` restores the minimum control plane and key Euther repos for diagnostics/backups.",
+                "It deliberately avoids enabling application services beyond EutherNet.",
+            ]
+        )
+
+    runbook_lines.extend(
+        [
+            "",
+            "## Deterministic Order",
+            "",
+            "1. Base OS packages.",
+            "2. Compare observed package inventory against the fresh host.",
+            "3. EutherNet repo and service.",
+            "4. Inventory refresh.",
+            "5. Remote-backed repo clone/update.",
+            "6. Service-specific deploys from each repo's own deploy docs.",
+            "7. Verification through EutherNet summary, changes, and restore-plan.",
+            "",
+            "## Package Inventory",
+            "",
+            f"- Bootstrap base packages: `{', '.join(base_package_names)}`",
+            f"- Observed installed packages in latest snapshot: `{len(observed_packages)}`",
+            "",
+            "Treat the observed package list as a comparison target, not a blind install list.",
+            "Install service-specific packages when a repo deploy doc or failed verification gate proves they are needed.",
+        ]
+    )
+    if observed_package_names:
+        runbook_lines.extend(
+            [
+                "Top observed package names:",
+                "",
+                "```text",
+                "\n".join(observed_package_names[:160]),
+                "```",
+                "",
+            ]
+        )
+    runbook_lines.extend(["", "## Repositories In Scope", ""])
+    for repo in repos:
+        dirty = " dirty" if int(repo.get("dirty_lines") or "0") > 0 else ""
+        runbook_lines.append(
+            f"- `{repo.get('path')}` branch=`{repo.get('branch') or 'detached/unknown'}` "
+            f"head=`{repo.get('head')}`{dirty} remote=`{repo.get('remote')}`"
+        )
+
+    runbook_lines.extend(
+        [
+            "",
+            "## Verification Gates",
+            "",
+            "- `systemctl --user status euthernet.service euthernet-refresh.timer`",
+            "- `curl -fsS http://127.0.0.1:8791/api/euthernet/summary`",
+            "- `curl -fsS http://127.0.0.1:8791/api/euthernet/changes`",
+            "- `curl -fsS http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=" + profile + "`",
+        ]
+    )
+
+    codex_prompt = "\n".join(
+        [
+            "Tja! This is a fresh Debian restore for EutherNet/EutherOxide.",
+            f"Use the `{profile}` restore profile from EutherNet.",
+            "Do not invent service order. Follow the generated runbook chronologically.",
+            "Keep all actions local and deterministic. Do not use hosted API keys.",
+            "Start by reading docs/RUNBOOK.md and the restore bundle.",
+            "Run the bootstrap script step by step, inspect errors, and verify each gate before continuing.",
+            "If secrets, private keys, or backups are needed, stop and ask me for the specific missing item.",
+        ]
+    )
+
+    return {
+        "ok": True,
+        "profile": profile,
+        "collected_at": summary["collected_at"],
+        "manifest": {
+            "server": server,
+            "repositories": repos,
+            "base_packages": base_package_names,
+            "observed_packages": observed_packages,
+            "verification": [
+                "euthernet.service active",
+                "euthernet-refresh.timer enabled",
+                "EutherNet summary endpoint returns ok",
+            ],
+        },
+        "runbook": "\n".join(runbook_lines) + "\n",
+        "bootstrap_script": "\n".join(bootstrap_lines) + "\n",
+        "codex_prompt": codex_prompt,
+    }
+
+
+def shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
 def ai_answer(config: dict[str, Any], question: str, local_context: str) -> str | None:
     ai = config.get("ai", {})
     if not ai.get("enabled"):
@@ -736,6 +1010,9 @@ def main(argv: list[str]) -> int:
     subparsers.add_parser("changes")
     subparsers.add_parser("restore-plan")
 
+    restore_bundle_parser = subparsers.add_parser("restore-bundle")
+    restore_bundle_parser.add_argument("--profile", default="full")
+
     ask_parser = subparsers.add_parser("ask")
     ask_parser.add_argument("question")
 
@@ -755,6 +1032,8 @@ def main(argv: list[str]) -> int:
         return command_changes(config)
     if args.command == "restore-plan":
         return command_restore_plan(config)
+    if args.command == "restore-bundle":
+        return command_restore_bundle(config, args.profile)
     if args.command == "ask":
         return command_ask(config, args.question)
     if args.command == "run":

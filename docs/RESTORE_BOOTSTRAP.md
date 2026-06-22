@@ -1,0 +1,65 @@
+# EutherNet Restore Bootstrap
+
+This document describes the intended fresh-hardware recovery flow for Codex.
+
+## Scenario
+
+The server hardware is gone or replaced. Install Debian first, restore network
+access, create user `nichlas` with sudo rights, and restore SSH public key
+access. Then clone EutherNet and let Codex continue from the generated restore
+bundle.
+
+```sh
+git clone https://github.com/NichlasEk/EutherNet /home/nichlas/EutherNet
+cd /home/nichlas/EutherNet
+make restore-bundle PROFILE=full
+```
+
+Start Codex in `/home/nichlas/EutherNet` and paste the generated Codex prompt.
+
+## Profiles
+
+- `full`: server control plane plus every remote-backed repository from the
+  latest inventory.
+- `backup`: server control plane plus key Euther repositories needed for
+  diagnostics and backup workflows.
+
+Use:
+
+```sh
+make restore-bundle PROFILE=backup
+```
+
+for the smaller backup-host variant.
+
+## Package Handling
+
+The restore bundle lists two package groups:
+
+- Base packages: a small deterministic apt set that the bootstrap script
+  installs first.
+- Observed packages: packages discovered on the original host by the latest
+  inventory snapshot.
+
+Observed packages are evidence for Codex, not a command to reinstall everything.
+Codex should install additional packages only when a repo deploy doc, service
+unit, or verification failure proves that package is needed.
+
+## Deterministic Order
+
+1. Base OS packages.
+2. Compare observed package inventory against the fresh host.
+3. EutherNet repo and service.
+4. Inventory refresh.
+5. Remote-backed repo clone/update.
+6. Service-specific deploys from each repo's own deploy docs.
+7. Verification through EutherNet summary, changes, and restore bundle.
+
+## Verification Gates
+
+```sh
+systemctl --user status euthernet.service euthernet-refresh.timer
+curl -fsS http://127.0.0.1:8791/api/euthernet/summary
+curl -fsS http://127.0.0.1:8791/api/euthernet/changes
+curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=full'
+```

@@ -8,7 +8,7 @@ import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from euthernet_cli import (
     answer_question,
@@ -17,6 +17,7 @@ from euthernet_cli import (
     latest_snapshot,
     operational_summary,
     parse_repos,
+    restore_bundle,
     restore_plan,
     run_allowed_command,
 )
@@ -74,6 +75,9 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/restore-plan":
             self.handle_restore_plan()
+            return
+        if path == "/api/euthernet/restore-bundle":
+            self.handle_restore_bundle()
             return
         self.write_error(HTTPStatus.NOT_FOUND, "unknown endpoint")
 
@@ -174,6 +178,15 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             self.write_error(HTTPStatus.NOT_FOUND, str(plan.get("error", "restore plan unavailable")))
             return
         self.write_json(HTTPStatus.OK, plan)
+
+    def handle_restore_bundle(self) -> None:
+        query = parse_qs(urlparse(self.path).query)
+        profile = query.get("profile", ["full"])[0]
+        bundle = restore_bundle(self.config, profile=profile)
+        if not bundle.get("ok"):
+            self.write_error(HTTPStatus.BAD_REQUEST, str(bundle.get("error", "restore bundle unavailable")))
+            return
+        self.write_json(HTTPStatus.OK, bundle)
 
     def handle_ask(self) -> None:
         try:

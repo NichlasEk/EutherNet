@@ -8,6 +8,7 @@
 .PHONY: summary
 .PHONY: changes
 .PHONY: restore-plan
+.PHONY: restore-bundle
 
 inventory:
 	python scripts/euthernet_inventory.py --config euthernet.toml
@@ -29,6 +30,9 @@ changes:
 
 restore-plan:
 	python scripts/euthernet_cli.py --config euthernet.toml restore-plan
+
+restore-bundle:
+	python scripts/euthernet_cli.py --config euthernet.toml restore-bundle --profile "$(PROFILE)"
 
 run:
 	python scripts/euthernet_cli.py --config euthernet.toml run "$(CMD)"
