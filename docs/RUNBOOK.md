@@ -80,6 +80,104 @@ Tools:
 - `ask`
 - `run_command`
 
+## Local HTTP API
+
+Run the local HTTP API:
+
+```sh
+make serve
+```
+
+Default bind address:
+
+```text
+http://127.0.0.1:8791
+```
+
+When EutherNet runs on the workstation, `euthernet.toml` uses
+`command_transport = "ssh"` and collects from the server through pubkey SSH.
+When EutherNet runs on the EutherOxide server itself, use
+`deploy/euthernet.server.toml`; it uses `command_transport = "local"` and does
+not need an SSH agent.
+
+Endpoints:
+
+```text
+GET  /api/euthernet/status
+GET  /api/euthernet/repos
+GET  /api/euthernet/inventory
+GET  /api/euthernet/commands
+POST /api/euthernet/ask
+POST /api/euthernet/refresh
+POST /api/euthernet/run
+```
+
+Examples:
+
+```sh
+curl -fsS http://127.0.0.1:8791/api/euthernet/status
+curl -fsS http://127.0.0.1:8791/api/euthernet/repos
+curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"vilka repos är dirty?"}'
+curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/run \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"disk"}'
+```
+
+`/api/euthernet/run` accepts only configured command names from the allowlist.
+It does not accept raw shell commands.
+
+## EutherPunk Integration Shape
+
+EutherPunk should call the local HTTP API instead of reading EutherNet files or
+opening SSH itself.
+
+Recommended config shape:
+
+```toml
+[euthernet]
+enabled = true
+url = "http://127.0.0.1:8791"
+```
+
+Recommended EutherPunk chat tools:
+
+- `server_status` -> `GET /api/euthernet/status`
+- `server_repos` -> `GET /api/euthernet/repos`
+- `server_refresh` -> `POST /api/euthernet/refresh`
+- `server_run` -> `POST /api/euthernet/run`
+
+For the first chat UI pass, slash commands are enough:
+
+```text
+/server status
+/server repos
+/server refresh
+/server run disk
+```
+
+The LLM can later suggest these same tool calls, but the server should continue
+to enforce the allowlist.
+
+## Server Service
+
+Install the user service on the EutherOxide server:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp deploy/euthernet.service ~/.config/systemd/user/euthernet.service
+systemctl --user daemon-reload
+systemctl --user enable --now euthernet.service
+systemctl --user status euthernet.service
+```
+
+Verify locally on the server:
+
+```sh
+curl -fsS http://127.0.0.1:8791/api/euthernet/status
+```
+
 ## Safety Rules
 
 - Default collectors are read-only.

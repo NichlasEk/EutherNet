@@ -3,6 +3,7 @@ name = "eutheroxide"
 lan_host = "192.168.32.186"
 public_host = "apothictech.se"
 ssh_host_alias = "euther-server"
+command_transport = "ssh"
 inventory_root = "inventory"
 state_root = "state"
 

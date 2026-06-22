@@ -1,0 +1,13 @@
+[Unit]
+Description=EutherNet local server inventory API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/nichlas/EutherNet
+ExecStart=/usr/bin/python /home/nichlas/EutherNet/scripts/euthernet_http.py --config /home/nichlas/EutherNet/deploy/euthernet.server.toml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 from euthernet_cli import command_ask, latest_snapshot, local_answer, parse_repos
-from euthernet_inventory import collect, load_config, run_ssh, write_outputs
+from euthernet_inventory import collect, load_config, run_configured, write_outputs
 
 
 def response(request_id: Any, result: Any) -> dict[str, Any]:
@@ -107,9 +107,7 @@ def call_tool(config: dict[str, Any], name: str, arguments: dict[str, Any]) -> d
         commands = {item["name"]: item for item in config.get("commands", {}).get("allowed", [])}
         if command_name not in commands:
             return {"isError": True, "content": text_content("Unknown command.")}
-        server = config["server"]
-        host = server.get("ssh_host_alias") or server["lan_host"]
-        result = run_ssh(host, commands[command_name]["command"], timeout=45)
+        result = run_configured(config, commands[command_name]["command"], timeout=45)
         text = result.get("stdout") or result.get("stderr") or ""
         return {"isError": not result.get("ok"), "content": text_content(text)}
 

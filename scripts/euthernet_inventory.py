@@ -104,6 +104,40 @@ def run_ssh(host: str, command: str, timeout: int = 20) -> dict[str, Any]:
         }
 
 
+def run_local(command: str, timeout: int = 20) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=True,
+        )
+        return {
+            "ok": result.returncode == 0,
+            "returncode": result.returncode,
+            "stdout": redact(result.stdout.strip()),
+            "stderr": redact(result.stderr.strip()),
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "returncode": None,
+            "stdout": redact((exc.stdout or "").strip() if isinstance(exc.stdout, str) else ""),
+            "stderr": f"timeout after {timeout}s",
+        }
+
+
+def run_configured(config: dict[str, Any], command: str, timeout: int = 20) -> dict[str, Any]:
+    server = config["server"]
+    transport = server.get("command_transport", "ssh")
+    if transport == "local":
+        return run_local(command, timeout=timeout)
+    host = server.get("ssh_host_alias") or server["lan_host"]
+    return run_ssh(host, command, timeout=timeout)
+
+
 def bundle_command(commands: list[RemoteCommand]) -> str:
     parts = ["set +e"]
     for item in commands:
@@ -152,8 +186,8 @@ def parse_bundle(result: dict[str, Any], commands: list[RemoteCommand]) -> dict[
     return parsed
 
 
-def command_group(host: str, commands: list[RemoteCommand]) -> dict[str, Any]:
-    return parse_bundle(run_ssh(host, bundle_command(commands), timeout=45), commands)
+def command_group(config: dict[str, Any], commands: list[RemoteCommand]) -> dict[str, Any]:
+    return parse_bundle(run_configured(config, bundle_command(commands), timeout=45), commands)
 
 
 def git_inventory_command(roots: list[str]) -> str:
@@ -173,7 +207,6 @@ done
 
 def collect(config: dict[str, Any]) -> dict[str, Any]:
     server = config["server"]
-    host = server.get("ssh_host_alias") or server["lan_host"]
     enabled = {
         item["name"]: item for item in config.get("collectors", []) if item.get("enabled", True)
     }
@@ -185,11 +218,12 @@ def collect(config: dict[str, Any]) -> dict[str, Any]:
             "lan_host": server.get("lan_host"),
             "public_host": server.get("public_host"),
             "ssh_host_alias": server.get("ssh_host_alias"),
+            "command_transport": server.get("command_transport", "ssh"),
         },
         "collectors": {},
     }
 
-    preflight = run_ssh(host, "true", timeout=12)
+    preflight = run_configured(config, "true", timeout=12)
     output["ssh_preflight"] = preflight
     if not preflight["ok"]:
         for name in enabled:
@@ -204,15 +238,15 @@ def collect(config: dict[str, Any]) -> dict[str, Any]:
         return output
 
     if "system" in enabled:
-        output["collectors"]["system"] = command_group(host, SYSTEM_COMMANDS)
+        output["collectors"]["system"] = command_group(config, SYSTEM_COMMANDS)
     if "systemd" in enabled:
-        output["collectors"]["systemd"] = command_group(host, SYSTEMD_COMMANDS)
+        output["collectors"]["systemd"] = command_group(config, SYSTEMD_COMMANDS)
     if "network" in enabled:
-        output["collectors"]["network"] = command_group(host, NETWORK_COMMANDS)
+        output["collectors"]["network"] = command_group(config, NETWORK_COMMANDS)
     if "git_repositories" in enabled:
         roots = enabled["git_repositories"].get("roots", ["/home/nichlas"])
         output["collectors"]["git_repositories"] = {
-            "scan": run_ssh(host, git_inventory_command(roots), timeout=60)
+            "scan": run_configured(config, git_inventory_command(roots), timeout=60)
         }
 
     return output
@@ -238,6 +272,7 @@ def render_markdown(snapshot: dict[str, Any]) -> str:
         f"- LAN host: `{server.get('lan_host', '')}`",
         f"- Public host: `{server.get('public_host', '')}`",
         f"- SSH host alias: `{server.get('ssh_host_alias', '')}`",
+        f"- Command transport: `{server.get('command_transport', 'ssh')}`",
         "",
         "## Collector Status",
         "",
@@ -315,6 +350,7 @@ def render_toml(snapshot: dict[str, Any]) -> str:
         f'lan_host = {toml_string(server.get("lan_host"))}',
         f'public_host = {toml_string(server.get("public_host"))}',
         f'ssh_host_alias = {toml_string(server.get("ssh_host_alias"))}',
+        f'command_transport = {toml_string(server.get("command_transport", "ssh"))}',
         "",
     ]
 

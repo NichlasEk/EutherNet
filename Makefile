@@ -4,6 +4,7 @@
 .PHONY: ask
 .PHONY: run
 .PHONY: mcp
+.PHONY: serve
 
 inventory:
 	python scripts/euthernet_inventory.py --config euthernet.toml
@@ -22,3 +23,6 @@ run:
 
 mcp:
 	python scripts/euthernet_mcp.py --config euthernet.toml
+
+serve:
+	python scripts/euthernet_http.py --config euthernet.toml

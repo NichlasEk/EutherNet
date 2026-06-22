@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from euthernet_inventory import load_config, run_ssh
+from euthernet_inventory import load_config, run_configured
 
 
 def latest_snapshot(state_root: pathlib.Path) -> dict[str, Any] | None:
@@ -195,28 +195,58 @@ def ai_answer(config: dict[str, Any], question: str, local_context: str) -> str 
         return None
 
 
-def command_ask(config: dict[str, Any], question: str) -> int:
+def answer_question(config: dict[str, Any], question: str) -> dict[str, Any]:
     local = local_answer(config, question)
     ai = ai_answer(config, question, local)
-    print(ai or local)
+    return {
+        "answer": ai or local,
+        "source": "ai" if ai else "inventory",
+        "fallback": local if ai else "",
+    }
+
+
+def command_ask(config: dict[str, Any], question: str) -> int:
+    print(answer_question(config, question)["answer"])
     return 0
 
 
-def command_run(config: dict[str, Any], command_name: str) -> int:
+def run_allowed_command(config: dict[str, Any], command_name: str) -> dict[str, Any]:
     commands = {item["name"]: item for item in config.get("commands", {}).get("allowed", [])}
     if command_name not in commands:
-        print("Unknown command. Allowed commands:")
-        for name, item in commands.items():
-            print(f"- {name}: {item.get('description', '')}")
-        return 1
+        return {
+            "ok": False,
+            "error": "unknown command",
+            "allowed": [
+                {"name": name, "description": item.get("description", "")}
+                for name, item in commands.items()
+            ],
+        }
 
     if not config.get("commands", {}).get("allow_remote", False):
-        print("Remote commands are disabled in config.")
-        return 1
+        return {"ok": False, "error": "remote commands are disabled in config"}
 
     server = config["server"]
-    host = server.get("ssh_host_alias") or server["lan_host"]
-    result = run_ssh(host, commands[command_name]["command"], timeout=45)
+    result = run_configured(config, commands[command_name]["command"], timeout=45)
+    return {
+        "ok": bool(result.get("ok")),
+        "name": command_name,
+        "description": commands[command_name].get("description", ""),
+        "returncode": result.get("returncode"),
+        "stdout": result.get("stdout", ""),
+        "stderr": result.get("stderr", ""),
+    }
+
+
+def command_run(config: dict[str, Any], command_name: str) -> int:
+    result = run_allowed_command(config, command_name)
+    if result.get("error") == "unknown command":
+        print("Unknown command. Allowed commands:")
+        for item in result.get("allowed", []):
+            print(f"- {item['name']}: {item.get('description', '')}")
+        return 1
+    if result.get("error"):
+        print(result["error"])
+        return 1
     if result.get("stdout"):
         print(result["stdout"])
     if result.get("stderr"):
