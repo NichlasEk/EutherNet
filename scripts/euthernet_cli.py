@@ -150,8 +150,77 @@ def parse_listening_ports(value: str) -> set[str]:
             continue
         local = parts[4]
         if ":" in local:
-            ports.add(local.rsplit(":", 1)[-1])
+                ports.add(local.rsplit(":", 1)[-1])
     return ports
+
+
+def parse_listening_services(value: str) -> list[dict[str, str]]:
+    services: list[dict[str, str]] = []
+    for line in value.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[1] != "LISTEN":
+            continue
+        protocol = parts[0]
+        local = parts[4]
+        port = local.rsplit(":", 1)[-1] if ":" in local else local
+        process = ""
+        if len(parts) >= 7:
+            process = " ".join(parts[6:])
+        services.append(
+            {
+                "protocol": protocol,
+                "local": local,
+                "port": port,
+                "process": process,
+                "status": "listening",
+            }
+        )
+    return services
+
+
+def parse_running_service_units(value: str) -> set[str]:
+    units: set[str] = set()
+    for line in value.splitlines():
+        line = line.strip()
+        if not line or line.startswith("UNIT "):
+            continue
+        parts = line.split()
+        if parts and parts[0].endswith(".service"):
+            units.add(parts[0])
+    return units
+
+
+def parse_ssh_connections(value: str) -> list[dict[str, str]]:
+    connections: list[dict[str, str]] = []
+    for line in value.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[0] in {"State", "Netid"}:
+            continue
+        state = parts[0]
+        if state not in {"ESTAB", "SYN-SENT", "SYN-RECV", "TIME-WAIT", "CLOSE-WAIT"}:
+            continue
+        local = parts[3]
+        peer = parts[4]
+        process = " ".join(parts[5:]) if len(parts) > 5 else ""
+        local_port = local.rsplit(":", 1)[-1] if ":" in local else ""
+        peer_port = peer.rsplit(":", 1)[-1] if ":" in peer else ""
+        direction = "outbound"
+        if local_port == "22":
+            direction = "inbound"
+        elif peer_port == "22":
+            direction = "outbound"
+        connections.append(
+            {
+                "state": state,
+                "local": local,
+                "peer": peer,
+                "local_port": local_port,
+                "peer_port": peer_port,
+                "process": process,
+                "direction": direction,
+            }
+        )
+    return connections
 
 
 def parse_packages(value: str) -> list[dict[str, str]]:
@@ -1445,41 +1514,108 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
 
     repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), "full"), "full")
     services = service_restore_plan(repos, "full")
+    collectors = snapshot.get("collectors", {})
+    systemd = collectors.get("systemd", {})
+    network = collectors.get("network", {})
+    running_units = parse_running_service_units(systemd.get("running_services", {}).get("stdout", ""))
+    failed_units = set(failed_service_lines(systemd.get("failed_services", {}).get("stdout", "")))
+    listening_services = parse_listening_services(network.get("listening_processes", {}).get("stdout", ""))
+    ssh_connections = parse_ssh_connections(network.get("ssh_connections", {}).get("stdout", ""))
     ports = sorted(
         parse_listening_ports(
-            snapshot.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", "")
+            network.get("listening_tcp_udp", {}).get("stdout", "")
         ),
         key=port_sort_key,
     )
     nodes: list[dict[str, str]] = [
-        {"id": "internet", "label": "Internet", "type": "external"},
-        {"id": "caddy", "label": "Caddy / apothictech.se", "type": "proxy"},
-        {"id": "server", "label": snapshot.get("server", {}).get("name", "EutherServer"), "type": "host"},
+        {"id": "internet", "label": "Internet", "type": "external", "status": "online", "detail": "WAN entrypoint"},
+        {"id": "caddy", "label": "Caddy / apothictech.se", "type": "proxy", "status": "observed", "detail": "reverse proxy"},
+        {
+            "id": "server",
+            "label": snapshot.get("server", {}).get("name", "EutherServer"),
+            "type": "host",
+            "status": "online" if snapshot.get("ssh_preflight", {}).get("ok") else "unknown",
+            "detail": snapshot.get("server", {}).get("lan_host", ""),
+        },
     ]
     edges: list[dict[str, str]] = [
-        {"from": "internet", "to": "caddy", "label": "443/80"},
-        {"from": "caddy", "to": "server", "label": "reverse proxy"},
+        {"from": "internet", "to": "caddy", "label": "443/80", "type": "ingress"},
+        {"from": "caddy", "to": "server", "label": "reverse proxy", "type": "proxy"},
     ]
+    service_reports: list[dict[str, Any]] = []
     for service in services:
         service_id = service["name"].lower()
-        nodes.append({"id": service_id, "label": service["name"], "type": "service"})
-        edges.append({"from": "server", "to": service_id, "label": ", ".join(service.get("ports", []))})
+        units = service.get("systemd", [])
+        if any(unit in running_units for unit in units):
+            status = "running"
+        elif any(any(unit in line for line in failed_units) for unit in units):
+            status = "failed"
+        else:
+            status = "unknown"
+        detail = ", ".join(units)
+        nodes.append({"id": service_id, "label": service["name"], "type": "service", "status": status, "detail": detail})
+        edges.append({"from": "server", "to": service_id, "label": ", ".join(service.get("ports", [])), "type": "hosts"})
+        service_reports.append(
+            {
+                "name": service["name"],
+                "status": status,
+                "units": units,
+                "ports": service.get("ports", []),
+                "repo_path": service.get("repo_path", ""),
+                "persistent_paths": service.get("persistent_paths", []),
+            }
+        )
         repo_id = f"{service_id}-repo"
-        nodes.append({"id": repo_id, "label": pathlib.Path(service["repo_path"]).name, "type": "repo"})
-        edges.append({"from": repo_id, "to": service_id, "label": "deploys"})
+        nodes.append(
+            {
+                "id": repo_id,
+                "label": pathlib.Path(service["repo_path"]).name,
+                "type": "repo",
+                "status": "present",
+                "detail": service["repo_path"],
+            }
+        )
+        edges.append({"from": repo_id, "to": service_id, "label": "deploys", "type": "deploy"})
+    for item in listening_services:
+        port_id = f"port-{item['protocol']}-{item['port']}".replace("/", "-")
+        nodes.append(
+            {
+                "id": port_id,
+                "label": f"{item['protocol']}:{item['port']}",
+                "type": "port",
+                "status": item["status"],
+                "detail": item.get("process", "") or item.get("local", ""),
+            }
+        )
+        edges.append({"from": "server", "to": port_id, "label": item.get("local", ""), "type": "listens"})
+    for index, connection in enumerate(ssh_connections, start=1):
+        peer_id = f"ssh-peer-{index}"
+        nodes.append(
+            {
+                "id": peer_id,
+                "label": connection["peer"],
+                "type": "ssh",
+                "status": connection["state"].lower(),
+                "detail": connection.get("process", ""),
+            }
+        )
+        if connection["direction"] == "inbound":
+            edges.append({"from": peer_id, "to": "server", "label": "ssh inbound", "type": "ssh"})
+        else:
+            edges.append({"from": "server", "to": peer_id, "label": "ssh outbound", "type": "ssh"})
     nodes.extend(
         [
-            {"id": "ollama", "label": "Local Ollama / qwen3-coder", "type": "ai"},
-            {"id": "imagegen", "label": "Image Generator", "type": "ai"},
-            {"id": "backups", "label": "Backup Data", "type": "storage"},
+            {"id": "ollama", "label": "Local Ollama / qwen3-coder", "type": "ai", "status": "configured", "detail": "chat model endpoint"},
+            {"id": "imagegen", "label": "Image Generator", "type": "ai", "status": "configured", "detail": "ComfyUI/image generation"},
+            {"id": "backups", "label": "Backup Data", "type": "storage", "status": "planned", "detail": "restore/backup manifests"},
         ]
     )
     edges.extend(
         [
-            {"from": "eutherpunk", "to": "ollama", "label": "chat model"},
-            {"from": "eutherpunk", "to": "imagegen", "label": "future map render"},
-            {"from": "backups", "to": "eutherbooks", "label": "library/audio"},
-            {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data"},
+            {"from": "eutherpunk", "to": "ollama", "label": "chat model", "type": "ai"},
+            {"from": "eutherpunk", "to": "imagegen", "label": "map render", "type": "ai"},
+            {"from": "backups", "to": "eutherbooks", "label": "library/audio", "type": "backup"},
+            {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data", "type": "backup"},
         ]
     )
     lines = [
@@ -1489,11 +1625,15 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         f"- Nodes: `{len(nodes)}`",
         f"- Edges: `{len(edges)}`",
         f"- Listening ports observed: `{', '.join(ports)}`",
+        f"- SSH connections observed: `{len(ssh_connections)}`",
         "",
         "## Nodes",
         "",
     ]
-    lines.extend(f"- `{node['id']}` ({node['type']}): {node['label']}" for node in nodes)
+    lines.extend(
+        f"- `{node['id']}` ({node['type']}, {node.get('status', 'unknown')}): {node['label']} - {node.get('detail', '')}"
+        for node in nodes
+    )
     lines.extend(["", "## Edges", ""])
     lines.extend(f"- `{edge['from']}` -> `{edge['to']}`: {edge['label']}" for edge in edges)
     service_names = ", ".join(service["name"] for service in services)
@@ -1512,6 +1652,9 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         "nodes": nodes,
         "edges": edges,
         "ports": ports,
+        "services": service_reports,
+        "listening_services": listening_services,
+        "ssh_connections": ssh_connections,
         "map_toml": map_toml,
         "map_md": "\n".join(lines) + "\n",
         "image_prompt": image_prompt,

@@ -58,6 +58,8 @@ SYSTEMD_COMMANDS = [
 NETWORK_COMMANDS = [
     RemoteCommand("addresses", "hostname -I"),
     RemoteCommand("listening_tcp_udp", "ss -tuln"),
+    RemoteCommand("listening_processes", "ss -tulpn"),
+    RemoteCommand("ssh_connections", "ss -tnp | awk 'NR == 1 || /:22|ssh/'"),
 ]
 
 
