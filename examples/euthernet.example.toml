@@ -1,0 +1,43 @@
+[server]
+name = "eutheroxide"
+lan_host = "192.168.32.186"
+public_host = "apothictech.se"
+ssh_host_alias = "euther-server"
+inventory_root = "inventory"
+state_root = "state"
+
+[security]
+redact_secrets = true
+write_raw_command_output = false
+allow_write_actions = false
+
+[[collectors]]
+name = "system"
+enabled = true
+interval_seconds = 3600
+
+[[collectors]]
+name = "systemd"
+enabled = true
+interval_seconds = 900
+
+[[collectors]]
+name = "git_repositories"
+enabled = true
+interval_seconds = 1800
+roots = ["/home/nichlas"]
+
+[[collectors]]
+name = "network"
+enabled = true
+interval_seconds = 900
+
+[ai]
+enabled = false
+endpoint = "http://127.0.0.1:11434"
+model = "local-model-name"
+send_raw_logs = false
+
+[mcp]
+enabled = true
+transport = "stdio"
