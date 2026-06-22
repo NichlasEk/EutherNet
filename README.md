@@ -12,8 +12,18 @@ tokens, and raw dumps from live services must stay outside git.
 ## Starting Points
 
 - [docs/EUTHERNET_PLAN.md](docs/EUTHERNET_PLAN.md) captures the staged plan.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) explains how to run the first collector.
 - [examples/euthernet.example.toml](examples/euthernet.example.toml) sketches
   the intended configuration shape.
+
+## First Collector
+
+```sh
+make inventory
+```
+
+The collector is read-only, uses SSH public key authentication, and fails fast
+if the server key is not available through the local SSH agent.
 
 ## Working Rule
 
