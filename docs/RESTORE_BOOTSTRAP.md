@@ -70,6 +70,10 @@ commands, verification gates, and notes for Codex. Package candidates are still
 evidence-driven: install them when a restore step or verification gate requires
 them.
 
+EutherNet also carries a small known-repo fallback for control-plane services.
+That keeps EutherPunk in the restore bundle even if the live server is running a
+deployed binary directory rather than a git checkout.
+
 ## Verification Gates
 
 ```sh

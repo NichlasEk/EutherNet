@@ -322,6 +322,34 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
 ]
 
 
+KNOWN_RESTORE_REPOS: list[dict[str, str | list[str]]] = [
+    {
+        "path": "/home/nichlas/EutherNet",
+        "remote": "https://github.com/NichlasEk/EutherNet",
+        "branch": "main",
+        "profiles": ["full", "backup"],
+    },
+    {
+        "path": "/home/nichlas/EutherPunk",
+        "remote": "https://github.com/NichlasEk/EutherPunk",
+        "branch": "main",
+        "profiles": ["full", "backup"],
+    },
+    {
+        "path": "/home/nichlas/EutherOxide",
+        "remote": "https://github.com/NichlasEk/EutherOxide",
+        "branch": "main",
+        "profiles": ["full", "backup"],
+    },
+    {
+        "path": "/home/nichlas/EutherBooks",
+        "remote": "https://github.com/NichlasEk/EutherBooks",
+        "branch": "main",
+        "profiles": ["full", "backup"],
+    },
+]
+
+
 def command_status(config: dict[str, Any]) -> int:
     snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
     if snapshot is None:
@@ -813,6 +841,29 @@ def restore_profile_repos(repos: list[dict[str, str]], profile: str) -> list[dic
     return [repo for repo in repos if repo.get("remote")]
 
 
+def with_known_restore_repos(repos: list[dict[str, str]], profile: str) -> list[dict[str, str]]:
+    output = list(repos)
+    seen = {repo.get("path", "") for repo in output}
+    for known in KNOWN_RESTORE_REPOS:
+        profiles = known.get("profiles", [])
+        if not isinstance(profiles, list) or profile not in profiles:
+            continue
+        path = str(known["path"])
+        if path in seen:
+            continue
+        output.append(
+            {
+                "path": path,
+                "remote": str(known["remote"]),
+                "branch": str(known["branch"]),
+                "head": "known-restore-repo",
+                "dirty_lines": "0",
+            }
+        )
+        seen.add(path)
+    return output
+
+
 def service_restore_plan(repos: list[dict[str, str]], profile: str) -> list[dict[str, Any]]:
     repo_paths = {repo.get("path", "") for repo in repos}
     services: list[dict[str, Any]] = []
@@ -820,7 +871,7 @@ def service_restore_plan(repos: list[dict[str, str]], profile: str) -> list[dict
         if profile not in service.get("profiles", []):
             continue
         repo_path = service["repo_path"]
-        if repo_path not in repo_paths and repo_path != "/home/nichlas/EutherNet":
+        if repo_path not in repo_paths:
             continue
         services.append(service)
     return services
@@ -874,7 +925,7 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
         return {"ok": False, "error": "no snapshot exists; run refresh first"}
 
     summary = snapshot_summary(snapshot)
-    repos = restore_profile_repos(parse_repos(snapshot), profile)
+    repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), profile), profile)
     services = service_restore_plan(repos, profile)
     server = summary["server"]
     package_text = (
@@ -894,6 +945,8 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
     repo_commands = []
     for repo in repos:
         path = repo.get("path", "")
+        if path == "/home/nichlas/EutherNet":
+            continue
         remote = repo.get("remote", "")
         branch = repo.get("branch", "")
         command = f'clone_or_update {shell_quote(remote)} {shell_quote(path)}'
