@@ -75,3 +75,23 @@ command = "df -hT"
 name = "uptime"
 description = "Show server uptime and load."
 command = "uptime"
+
+[[commands.allowed]]
+name = "restart-eutherhost"
+description = "Restart the EutherHost system service."
+command = "sudo -n /usr/bin/systemctl restart eutherhost.service && /usr/bin/systemctl is-active eutherhost.service"
+
+[[commands.allowed]]
+name = "restart-caddy"
+description = "Restart the Caddy reverse proxy service."
+command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemctl is-active caddy.service"
+
+[[commands.allowed]]
+name = "restart-eutherbooks"
+description = "Restart the EutherBooks system service."
+command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/systemctl is-active eutherbooks.service"
+
+[[commands.allowed]]
+name = "restart-eutherpunkd"
+description = "Restart the EutherPunk user service."
+command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
