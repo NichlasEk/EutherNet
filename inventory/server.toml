@@ -1,0 +1,24 @@
+collected_at = "2026-06-22T07:52:06+00:00"
+
+[server]
+name = "eutheroxide"
+lan_host = "192.168.32.186"
+public_host = "apothictech.se"
+ssh_host_alias = "euther-server"
+
+[collectors.system]
+ok_commands = 7
+total_commands = 7
+
+[collectors.systemd]
+ok_commands = 3
+total_commands = 3
+
+[collectors.network]
+ok_commands = 2
+total_commands = 2
+
+[collectors.git_repositories]
+ok = true
+returncode = 0
+repository_count = 12

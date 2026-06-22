@@ -33,11 +33,39 @@ enabled = true
 interval_seconds = 900
 
 [ai]
-enabled = false
+enabled = true
 endpoint = "http://127.0.0.1:11434"
-model = "local-model-name"
+model = "qwen3-coder:30b"
 send_raw_logs = false
 
 [mcp]
 enabled = true
 transport = "stdio"
+
+[commands]
+allow_remote = true
+
+[[commands.allowed]]
+name = "health"
+description = "Show hostname, uptime, failed services, and disk usage."
+command = "hostname && uptime && systemctl list-units --type=service --state=failed --no-pager --plain && df -hT"
+
+[[commands.allowed]]
+name = "failed-services"
+description = "List failed systemd services."
+command = "systemctl list-units --type=service --state=failed --no-pager --plain"
+
+[[commands.allowed]]
+name = "listening-ports"
+description = "List listening TCP and UDP ports."
+command = "ss -tuln"
+
+[[commands.allowed]]
+name = "disk"
+description = "Show filesystem usage."
+command = "df -hT"
+
+[[commands.allowed]]
+name = "uptime"
+description = "Show server uptime and load."
+command = "uptime"
