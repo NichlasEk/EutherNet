@@ -238,8 +238,15 @@ Profiles:
 The bundle separates base packages from observed packages:
 
 - Base packages are the small apt set installed by the bootstrap script.
+- Service package candidates come from the generated service-aware restore
+  catalog.
 - Observed packages come from the latest server snapshot using `dpkg-query` or
   `pacman -Q`. Treat them as a comparison target, not a blind install list.
+
+The restore bundle currently emits service-aware restore steps for known repos
+when they appear in the latest inventory: EutherNet, EutherPunk, EutherOxide,
+and EutherBooks. Each service entry includes package candidates, persistent
+paths, ordered commands, verification commands, and notes for Codex.
 
 ## Safety Rules
 

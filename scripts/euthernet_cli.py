@@ -180,6 +180,148 @@ def port_sort_key(value: str) -> tuple[int, int | str]:
     return (1, value)
 
 
+SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
+    {
+        "name": "EutherNet",
+        "repo_path": "/home/nichlas/EutherNet",
+        "profiles": ["full", "backup"],
+        "systemd": ["euthernet.service", "euthernet-refresh.timer"],
+        "ports": ["8791"],
+        "packages": ["ca-certificates", "curl", "git", "python3", "systemd"],
+        "persistent_paths": ["/home/nichlas/EutherNet/state"],
+        "steps": [
+            "cd /home/nichlas/EutherNet",
+            "mkdir -p /home/nichlas/.config/systemd/user",
+            "cp deploy/euthernet.service /home/nichlas/.config/systemd/user/euthernet.service",
+            "cp deploy/euthernet-refresh.service /home/nichlas/.config/systemd/user/euthernet-refresh.service",
+            "cp deploy/euthernet-refresh.timer /home/nichlas/.config/systemd/user/euthernet-refresh.timer",
+            "systemctl --user daemon-reload",
+            "systemctl --user enable --now euthernet.service",
+            "systemctl --user enable --now euthernet-refresh.timer",
+            "curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/refresh",
+        ],
+        "verify": [
+            "systemctl --user is-active euthernet.service",
+            "systemctl --user is-enabled euthernet-refresh.timer",
+            "curl -fsS http://127.0.0.1:8791/api/euthernet/summary",
+        ],
+        "notes": [
+            "EutherNet is restored first because later restore checks use its API.",
+            "State snapshots are runtime evidence and are intentionally not committed.",
+        ],
+    },
+    {
+        "name": "EutherPunk",
+        "repo_path": "/home/nichlas/EutherPunk",
+        "profiles": ["full", "backup"],
+        "systemd": ["eutherpunkd.service"],
+        "ports": ["8787"],
+        "packages": ["golang", "ca-certificates", "curl"],
+        "persistent_paths": [
+            "/home/nichlas/EutherPunk/var/chats",
+            "/home/nichlas/EutherPunk/var/settings",
+            "/home/nichlas/EutherPunk/var/images",
+            "/home/nichlas/.config/eutherpunk/config.toml",
+        ],
+        "steps": [
+            "cd /home/nichlas/EutherPunk",
+            "scripts/build.sh",
+            "mkdir -p /home/nichlas/EutherPunk/bin /home/nichlas/EutherPunk/dist/cli /home/nichlas/.config/eutherpunk /home/nichlas/.config/systemd/user",
+            "cp dist/cli/eutherpunkd-linux-amd64 /home/nichlas/EutherPunk/bin/eutherpunkd",
+            "cp dist/cli/eutherpunk-linux-amd64 /home/nichlas/EutherPunk/dist/cli/eutherpunk-linux-amd64",
+            "chmod +x /home/nichlas/EutherPunk/bin/eutherpunkd /home/nichlas/EutherPunk/dist/cli/eutherpunk-linux-amd64",
+            "cp deploy/eutherpunk.server.toml /home/nichlas/.config/eutherpunk/config.toml",
+            "cp deploy/eutherpunkd.service /home/nichlas/.config/systemd/user/eutherpunkd.service",
+            "systemctl --user daemon-reload",
+            "systemctl --user enable --now eutherpunkd.service",
+        ],
+        "verify": [
+            "systemctl --user is-active eutherpunkd.service",
+            "curl -fsS http://127.0.0.1:8787/api/eutherpunk/status",
+            "curl -fsS http://127.0.0.1:8787/api/eutherpunk/chat -H 'Content-Type: application/json' -d '{\"message\":\"/server summary\"}'",
+        ],
+        "notes": [
+            "Keep EutherPunk local-first; do not add hosted model API keys.",
+            "The configured model endpoint must be local Ollama unless config says otherwise.",
+        ],
+    },
+    {
+        "name": "EutherOxide",
+        "repo_path": "/home/nichlas/EutherOxide",
+        "profiles": ["full"],
+        "systemd": ["eutherhost.service", "caddy.service", "euther-srv-clean.timer"],
+        "ports": ["32162", "80", "443"],
+        "packages": ["cargo", "nodejs", "npm", "caddy", "python3"],
+        "persistent_paths": [
+            "/home/nichlas/EutherOxide/.euther-host",
+            "/home/nichlas/EutherOxide/.euther-bridge",
+            "/home/nichlas/roms",
+            "/srv",
+        ],
+        "steps": [
+            "cd /home/nichlas/EutherOxide",
+            "scripts/build-release.sh",
+            "sudo cp deploy/eutherhost.service.example /etc/systemd/system/eutherhost.service",
+            "sudo cp deploy/Caddyfile /etc/caddy/Caddyfile",
+            "sudo cp deploy/euther-srv-clean.service /etc/systemd/system/euther-srv-clean.service",
+            "sudo cp deploy/euther-srv-clean.timer /etc/systemd/system/euther-srv-clean.timer",
+            "sudo systemctl daemon-reload",
+            "sudo systemctl enable --now eutherhost.service",
+            "sudo systemctl enable --now caddy.service",
+            "sudo systemctl enable --now euther-srv-clean.timer",
+        ],
+        "verify": [
+            "sudo systemctl is-active eutherhost.service",
+            "sudo systemctl is-active caddy.service",
+            "sudo systemctl is-enabled euther-srv-clean.timer",
+            "curl -fsS http://127.0.0.1:32162/health || curl -fsS http://127.0.0.1:32162",
+        ],
+        "notes": [
+            "Review deploy/Caddyfile domain spelling before enabling public traffic.",
+            "Restore private data under /srv and /home/nichlas/roms from backups, not from git.",
+        ],
+    },
+    {
+        "name": "EutherBooks",
+        "repo_path": "/home/nichlas/EutherBooks",
+        "profiles": ["full", "backup"],
+        "systemd": ["eutherbooks.service", "eutherbooks-clean.timer"],
+        "ports": ["8088"],
+        "packages": ["python3", "python3-venv", "python3-pip", "curl"],
+        "persistent_paths": [
+            "/home/nichlas/EutherBooks/library",
+            "/home/nichlas/EutherBooks/data",
+            "/srv/eutherbooks/audio",
+            "/home/nichlas/EutherBooks/models",
+            "/home/nichlas/EutherBooks/tools",
+        ],
+        "steps": [
+            "cd /home/nichlas/EutherBooks",
+            "python3 -m venv .venv",
+            ". .venv/bin/activate && pip install -e '.[dev]'",
+            "scripts/download_piper_assets.sh",
+            "sudo mkdir -p /srv/eutherbooks/audio",
+            "sudo chown -R nichlas:nichlas /srv/eutherbooks",
+            "sudo cp deploy/systemd/eutherbooks.service /etc/systemd/system/eutherbooks.service",
+            "sudo cp deploy/systemd/eutherbooks-clean.service /etc/systemd/system/eutherbooks-clean.service",
+            "sudo cp deploy/systemd/eutherbooks-clean.timer /etc/systemd/system/eutherbooks-clean.timer",
+            "sudo systemctl daemon-reload",
+            "sudo systemctl enable --now eutherbooks.service",
+            "sudo systemctl enable --now eutherbooks-clean.timer",
+        ],
+        "verify": [
+            "sudo systemctl is-active eutherbooks.service",
+            "sudo systemctl is-enabled eutherbooks-clean.timer",
+            "curl -fsS http://127.0.0.1:8088/health",
+        ],
+        "notes": [
+            "Restore library and generated audio from backup storage before expecting existing books/audio.",
+            "Piper assets are local runtime artifacts and may need a network download or restored cache.",
+        ],
+    },
+]
+
+
 def command_status(config: dict[str, Any]) -> int:
     snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
     if snapshot is None:
@@ -671,6 +813,57 @@ def restore_profile_repos(repos: list[dict[str, str]], profile: str) -> list[dic
     return [repo for repo in repos if repo.get("remote")]
 
 
+def service_restore_plan(repos: list[dict[str, str]], profile: str) -> list[dict[str, Any]]:
+    repo_paths = {repo.get("path", "") for repo in repos}
+    services: list[dict[str, Any]] = []
+    for service in SERVICE_RESTORE_CATALOG:
+        if profile not in service.get("profiles", []):
+            continue
+        repo_path = service["repo_path"]
+        if repo_path not in repo_paths and repo_path != "/home/nichlas/EutherNet":
+            continue
+        services.append(service)
+    return services
+
+
+def service_package_names(services: list[dict[str, Any]]) -> list[str]:
+    names: set[str] = set()
+    for service in services:
+        names.update(service.get("packages", []))
+    return sorted(names)
+
+
+def service_restore_lines(services: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    if not services:
+        return ["No known services matched repositories in this restore profile."]
+    for index, service in enumerate(services, start=1):
+        lines.extend(
+            [
+                f"### {index}. {service['name']}",
+                "",
+                f"- Repository: `{service['repo_path']}`",
+                "- Systemd units: `" + ", ".join(service.get("systemd", [])) + "`",
+                "- Expected local ports: `" + ", ".join(service.get("ports", [])) + "`",
+                "- Service packages: `" + ", ".join(service.get("packages", [])) + "`",
+                "",
+                "Persistent paths to restore or verify:",
+            ]
+        )
+        lines.extend(f"- `{path}`" for path in service.get("persistent_paths", []))
+        lines.extend(["", "Run in order:", "", "```sh"])
+        lines.extend(service.get("steps", []))
+        lines.extend(["```", "", "Verify:", "", "```sh"])
+        lines.extend(service.get("verify", []))
+        lines.extend(["```"])
+        notes = service.get("notes", [])
+        if notes:
+            lines.extend(["", "Notes:"])
+            lines.extend(f"- {note}" for note in notes)
+        lines.append("")
+    return lines
+
+
 def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, Any]:
     profile = (profile or "full").strip().lower()
     if profile not in {"full", "backup"}:
@@ -682,6 +875,7 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
 
     summary = snapshot_summary(snapshot)
     repos = restore_profile_repos(parse_repos(snapshot), profile)
+    services = service_restore_plan(repos, profile)
     server = summary["server"]
     package_text = (
         snapshot.get("collectors", {})
@@ -711,6 +905,7 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
     if profile == "full":
         base_packages += " caddy"
     base_package_names = base_packages.split()
+    service_packages = service_package_names(services)
 
     bootstrap_lines = [
         "#!/usr/bin/env bash",
@@ -812,12 +1007,13 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
             "3. EutherNet repo and service.",
             "4. Inventory refresh.",
             "5. Remote-backed repo clone/update.",
-            "6. Service-specific deploys from each repo's own deploy docs.",
+            "6. Service-aware restore steps in the order below.",
             "7. Verification through EutherNet summary, changes, and restore-plan.",
             "",
             "## Package Inventory",
             "",
             f"- Bootstrap base packages: `{', '.join(base_package_names)}`",
+            f"- Service package candidates: `{', '.join(service_packages)}`",
             f"- Observed installed packages in latest snapshot: `{len(observed_packages)}`",
             "",
             "Treat the observed package list as a comparison target, not a blind install list.",
@@ -842,6 +1038,9 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
             f"- `{repo.get('path')}` branch=`{repo.get('branch') or 'detached/unknown'}` "
             f"head=`{repo.get('head')}`{dirty} remote=`{repo.get('remote')}`"
         )
+
+    runbook_lines.extend(["", "## Service Restore Steps", ""])
+    runbook_lines.extend(service_restore_lines(services))
 
     runbook_lines.extend(
         [
@@ -874,7 +1073,9 @@ def restore_bundle(config: dict[str, Any], profile: str = "full") -> dict[str, A
         "manifest": {
             "server": server,
             "repositories": repos,
+            "services": services,
             "base_packages": base_package_names,
+            "service_packages": service_packages,
             "observed_packages": observed_packages,
             "verification": [
                 "euthernet.service active",
