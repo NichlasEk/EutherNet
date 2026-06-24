@@ -323,6 +323,12 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
         "packages": ["cargo", "nodejs", "npm", "caddy", "python3"],
         "persistent_paths": [
             "/home/nichlas/EutherOxide/.euther-host",
+            "/home/nichlas/EutherOxide/.euther-host/eutherium/ledger.json",
+            "/home/nichlas/EutherOxide/.euther-host/eutherium/inventory.json",
+            "/home/nichlas/EutherOxide/.euther-host/eutherium/jox-shop.json",
+            "/home/nichlas/EutherOxide/.euther-host/eutherium/jox-offers.json",
+            "/home/nichlas/EutherOxide/.euther-host/eutherium/joxbox",
+            "/home/nichlas/EutherOxide/.euther-host/users/*/eutherium/trophy-room.json",
             "/home/nichlas/EutherOxide/.euther-bridge",
             "/home/nichlas/roms",
             "/srv",
@@ -344,10 +350,14 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
             "sudo systemctl is-active caddy.service",
             "sudo systemctl is-enabled euther-srv-clean.timer",
             "curl -fsS http://127.0.0.1:32162/health || curl -fsS http://127.0.0.1:32162",
+            "test -d /home/nichlas/EutherOxide/.euther-host/eutherium",
+            "test -d /home/nichlas/EutherOxide/.euther-host/eutherium/joxbox",
         ],
         "notes": [
             "Review deploy/Caddyfile domain spelling before enabling public traffic.",
             "Restore private data under /srv and /home/nichlas/roms from backups, not from git.",
+            "Eutherium/Joxbox state is part of EutherOxide host state: ledger, inventory, JOX shop, offers, self-contained .jox artifacts, embedded assets, and trophy-room layouts.",
+            "A .jox may be socially tradeable with unknown provenance, but EUX sale value depends on valid payload/assets hashes and an intact ownership/mutation chain.",
         ],
     },
     {
@@ -1249,7 +1259,11 @@ def current_restore_services(snapshot: dict[str, Any], profile: str = "full") ->
 
 def backup_item_for_path(service: dict[str, Any], path: str) -> dict[str, str]:
     lower = path.lower()
-    if any(token in lower for token in ["state", "cache", "tools", "models", ".venv"]):
+    if any(token in lower for token in ["jox", "eutherium", "trophy-room", "ledger.json", "inventory.json", "jox-shop.json", "jox-offers.json"]):
+        category = "critical"
+        sensitivity = "private"
+        action = "restore from backup before Eutherium/Joxbox verification; do not regenerate provenance data"
+    elif any(token in lower for token in ["state", "cache", "tools", "models", ".venv"]):
         category = "rebuildable"
         sensitivity = "low"
         action = "restore from cache if available, otherwise regenerate"
@@ -1576,6 +1590,9 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             }
         )
         edges.append({"from": repo_id, "to": service_id, "label": "deploys", "type": "deploy"})
+        if service["name"] == "EutherOxide":
+            nodes.extend(eutherium_jox_nodes())
+            edges.extend(eutherium_jox_edges(service_id))
     for item in listening_services:
         port_id = f"port-{item['protocol']}-{item['port']}".replace("/", "-")
         nodes.append(
@@ -1640,7 +1657,8 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
     image_prompt = (
         "Create a detailed cyberpunk network map of the EutherVerse home server. "
         "Show a central server tower labeled EutherServer, a neon reverse proxy gate labeled apothictech.se/Caddy, "
-        f"service districts labeled {service_names}, local AI cores labeled Ollama qwen3-coder and Image Generator, "
+        f"service districts labeled {service_names}, an Eutherium vault district with Joxbox artifact containers, "
+        "a provenance ledger, trophy rooms, local AI cores labeled Ollama qwen3-coder and Image Generator, "
         "backup vaults for /srv, ROMs, EutherBooks library/audio, and glowing data links annotated with ports. "
         "Style: readable technical diagram, isometric cyberpunk city, dark background, neon cyan magenta amber accents, "
         "clear labels, no logos, no tiny unreadable text."
@@ -1659,6 +1677,57 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         "map_md": "\n".join(lines) + "\n",
         "image_prompt": image_prompt,
     }
+
+
+def eutherium_jox_nodes() -> list[dict[str, str]]:
+    return [
+        {
+            "id": "eutherium",
+            "label": "Eutherium Economy",
+            "type": "domain",
+            "status": "stateful",
+            "detail": ".euther-host/eutherium ledger, balances, inventory, shop listings",
+        },
+        {
+            "id": "joxbox",
+            "label": "Joxbox",
+            "type": "artifact-store",
+            "status": "stateful",
+            "detail": ".euther-host/eutherium/joxbox self-contained .jox artifacts and embedded media",
+        },
+        {
+            "id": "jox-container",
+            "label": ".jox Container",
+            "type": "format",
+            "status": "versioned",
+            "detail": "format/version/schemaVersion, payload hash, assets hash, ownership history, mutation log",
+        },
+        {
+            "id": "jox-provenance",
+            "label": "JOX Provenance",
+            "type": "integrity",
+            "status": "enforced",
+            "detail": "valid provenance required for EUX sale value; unknown provenance can exist but has no EUX sale value",
+        },
+        {
+            "id": "trophy-rooms",
+            "label": "Trophy Rooms",
+            "type": "user-space",
+            "status": "stateful",
+            "detail": ".euther-host/users/*/eutherium/trophy-room.json layouts and inspectable JOX trophies",
+        },
+    ]
+
+
+def eutherium_jox_edges(eutheroxide_id: str) -> list[dict[str, str]]:
+    return [
+        {"from": eutheroxide_id, "to": "eutherium", "label": "/api/eutherium/*", "type": "api-domain"},
+        {"from": "eutherium", "to": "joxbox", "label": "/api/shop/joxbox/*", "type": "artifact-api"},
+        {"from": "joxbox", "to": "jox-container", "label": "stores .jox + embedded assets", "type": "contains"},
+        {"from": "jox-container", "to": "jox-provenance", "label": "payload/assets hash + mutation log", "type": "integrity"},
+        {"from": "eutherium", "to": "trophy-rooms", "label": "inventory placement and public room inspection", "type": "ownership"},
+        {"from": "jox-provenance", "to": "eutherium", "label": "validity gates EUX sale value", "type": "policy"},
+    ]
 
 
 def ai_answer(config: dict[str, Any], question: str, local_context: str) -> str | None:
