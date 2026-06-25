@@ -43,3 +43,9 @@ The deterministic server map adds explicit nodes for:
 
 Those nodes hang under EutherOxide so the map shows that the economy is not just
 static web UI. It is mutable host state that must survive restore.
+
+## Related Runtime Maps
+
+- [Local AI Compatibility Map](LOCAL_AI_COMPATIBILITY_MAP.md) records the
+  runtime model-profile shims that SecondSight depends on without committing
+  local ComfyUI profile files or model weights.
