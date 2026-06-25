@@ -61,6 +61,7 @@ Run simple read-only remote commands through named aliases:
 make run CMD=health
 make run CMD=failed-services
 make run CMD=listening-ports
+make run CMD=euthersight-health
 ```
 
 The aliases are defined in `euthernet.toml`. Avoid adding broad shell aliases.
@@ -261,8 +262,16 @@ The bundle separates base packages from observed packages:
 
 The restore bundle currently emits service-aware restore steps for known repos
 when they appear in the latest inventory: EutherNet, EutherPunk, EutherOxide,
-and EutherBooks. Each service entry includes package candidates, persistent
-paths, ordered commands, verification commands, and notes for Codex.
+EutherBooks, and EutherSight. Each service entry includes package candidates,
+persistent paths, ordered commands, verification commands, and notes for Codex.
+
+EutherSight restore entries cover the camera/Frigate layer, the local
+`euthersight-ai-worker.service`, `eutherbird-producer.service`, SecondSight
+`.jox` artifacts, and EutherBird audio/observation traces. Treat
+`/run/media/nichlas/Titan/SecondSight` and `.jox` files as provenance-bearing
+state. Restore them before validating artifact history or Eutherium/Joxbox
+links. Treat `/run/media/nichlas/Titan/Camera_feed/eutherbird` as replayable
+audio evidence for BirdNET observations.
 
 ## TOML Artifacts
 

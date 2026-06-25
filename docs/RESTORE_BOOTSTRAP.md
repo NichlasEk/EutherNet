@@ -64,6 +64,8 @@ their repositories exist in the latest inventory:
 - EutherPunk: local AI gateway, chat server, local API on `127.0.0.1:8787`.
 - EutherOxide: host service, Caddy reverse proxy, `/srv` cleanup timer.
 - EutherBooks: FastAPI service, generated-audio cleanup timer, Piper assets.
+- EutherSight: Frigate/camera service state, local AI worker, EutherBird audio
+  producer, SecondSight `.jox` artifacts, and BirdNET observation traces.
 
 Each service entry lists package candidates, persistent paths, exact restore
 commands, verification gates, and notes for Codex. Package candidates are still

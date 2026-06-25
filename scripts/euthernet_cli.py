@@ -398,6 +398,55 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
             "Piper assets are local runtime artifacts and may need a network download or restored cache.",
         ],
     },
+    {
+        "name": "EutherSight",
+        "repo_path": "/home/nichlas/EutherSight",
+        "profiles": ["full", "backup"],
+        "systemd": [
+            "docker.service",
+            "euthersight-ai-worker.service",
+            "eutherbird-producer.service",
+            "euthersight-tunnel.service",
+            "euthersight-ai-tunnel.service",
+        ],
+        "ports": ["5000", "7777", "8554", "8555"],
+        "packages": ["docker", "docker-compose", "ffmpeg", "python3", "python3-pillow", "curl"],
+        "persistent_paths": [
+            "/home/nichlas/EutherSight/.env",
+            "/home/nichlas/EutherSight/config",
+            "/home/nichlas/EutherSight/secondsight.toml",
+            "/home/nichlas/EutherSight/.euthersight-ai",
+            "/home/nichlas/ai/eutherbird",
+            "/run/media/nichlas/Titan/Camera_feed",
+            "/run/media/nichlas/Titan/Camera_feed/eutherbird",
+            "/run/media/nichlas/Titan/SecondSight",
+        ],
+        "steps": [
+            "cd /home/nichlas/EutherSight",
+            "python -m py_compile scripts/euthersight-ai-worker.py scripts/eutherbird-producer.py",
+            "sudo systemctl daemon-reload",
+            "sudo systemctl enable --now docker.service",
+            "sudo systemctl enable --now euthersight-ai-worker.service",
+            "sudo systemctl enable --now eutherbird-producer.service",
+            "sudo systemctl enable --now euthersight-tunnel.service",
+            "sudo systemctl enable --now euthersight-ai-tunnel.service",
+        ],
+        "verify": [
+            "sudo systemctl is-active euthersight-ai-worker.service",
+            "sudo systemctl is-active eutherbird-producer.service",
+            "curl -fsS http://127.0.0.1:7777/health",
+            "curl -fsS 'http://127.0.0.1:7777/api/eutherbird/observations?limit=5&min_confidence=0.15'",
+            "test -d /run/media/nichlas/Titan/Camera_feed/eutherbird/observations",
+            "test -d /run/media/nichlas/Titan/SecondSight/jox",
+        ],
+        "notes": [
+            "EutherSight owns Frigate camera state, SecondSight artifacts, and the EutherBird audio observation layer.",
+            "SecondSight .jox files and /run/media/nichlas/Titan/SecondSight are provenance-bearing state; restore them from backup before validating JOX history.",
+            "Bird audio segments are append-only observation evidence. They can be large, but they are the trace that makes BirdNET observations replayable.",
+            "The BirdNET model environment under /home/nichlas/ai/eutherbird is rebuildable if documented dependencies and cached models are available.",
+            "The EutherHost UI proxies EutherSight routes, but EutherSight recovery should first verify the local worker on 127.0.0.1:7777.",
+        ],
+    },
 ]
 
 
@@ -423,6 +472,12 @@ KNOWN_RESTORE_REPOS: list[dict[str, str | list[str]]] = [
     {
         "path": "/home/nichlas/EutherBooks",
         "remote": "https://github.com/NichlasEk/EutherBooks",
+        "branch": "main",
+        "profiles": ["full", "backup"],
+    },
+    {
+        "path": "/home/nichlas/EutherSight",
+        "remote": "https://github.com/NichlasEk/EutherSight",
         "branch": "main",
         "profiles": ["full", "backup"],
     },
