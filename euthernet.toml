@@ -97,16 +97,6 @@ description = "Restart the EutherPunk user service."
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
 
 [[commands.allowed]]
-name = "restart-euthersight-ai"
-description = "Restart the EutherSight AI and SecondSight worker service."
-command = "sudo -n /usr/bin/systemctl restart euthersight-ai-worker.service && /usr/bin/systemctl is-active euthersight-ai-worker.service"
-
-[[commands.allowed]]
-name = "restart-eutherbird-producer"
-description = "Restart the EutherBird camera audio producer service."
-command = "sudo -n /usr/bin/systemctl restart eutherbird-producer.service && /usr/bin/systemctl is-active eutherbird-producer.service"
-
-[[commands.allowed]]
 name = "euthersight-health"
-description = "Show EutherSight AI, SecondSight, and EutherBird health."
-command = "/usr/bin/curl -fsS http://127.0.0.1:7777/health"
+description = "Show EutherSight AI, SecondSight, and EutherBird health through the EutherSight AI tunnel."
+command = "/usr/bin/curl -fsS http://127.0.0.1:15101/health"
