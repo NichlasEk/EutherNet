@@ -315,6 +315,40 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
         ],
     },
     {
+        "name": "EutherPal",
+        "repo_path": "/home/nichlas/EutherPal",
+        "profiles": ["full", "backup"],
+        "systemd": ["eutherpal.service", "eutherpal-ollama-tunnel.service"],
+        "ports": ["8793", "11434"],
+        "packages": ["cargo", "ca-certificates", "curl", "git", "openssh-client", "systemd"],
+        "persistent_paths": [
+            "/home/nichlas/EutherPal/data",
+            "/home/nichlas/EutherPal/config",
+            "/home/nichlas/.config/systemd/user/eutherpal.service",
+            "/home/nichlas/.config/systemd/user/eutherpal-ollama-tunnel.service",
+        ],
+        "steps": [
+            "cd /home/nichlas/EutherPal",
+            "cargo build --manifest-path server/Cargo.toml --release",
+            "mkdir -p /home/nichlas/.config/systemd/user",
+            "cp deploy/systemd/eutherpal.service /home/nichlas/.config/systemd/user/eutherpal.service",
+            "cp deploy/systemd/eutherpal-ollama-tunnel.service /home/nichlas/.config/systemd/user/eutherpal-ollama-tunnel.service",
+            "systemctl --user daemon-reload",
+            "systemctl --user enable --now eutherpal.service",
+            "systemctl --user enable --now eutherpal-ollama-tunnel.service",
+        ],
+        "verify": [
+            "systemctl --user is-active eutherpal.service",
+            "curl -fsS http://127.0.0.1:8793/health",
+            "curl -fsS http://127.0.0.1:11434/api/tags",
+        ],
+        "notes": [
+            "EutherPal is the Swedish Monopoly thin client/game server for TV, mobile, and admin bank flow.",
+            "The bank LLM should use local Ollama through the reverse SSH tunnel on 127.0.0.1:11434; do not add hosted API keys.",
+            "Port 8791 belongs to EutherNet and 8787 belongs to EutherPunk, so EutherPal uses 8793.",
+        ],
+    },
+    {
         "name": "EutherOxide",
         "repo_path": "/home/nichlas/EutherOxide",
         "profiles": ["full"],
@@ -460,6 +494,12 @@ KNOWN_RESTORE_REPOS: list[dict[str, str | list[str]]] = [
     {
         "path": "/home/nichlas/EutherPunk",
         "remote": "https://github.com/NichlasEk/EutherPunk",
+        "branch": "main",
+        "profiles": ["full", "backup"],
+    },
+    {
+        "path": "/home/nichlas/EutherPal",
+        "remote": "https://github.com/NichlasEk/EutherPal",
         "branch": "main",
         "profiles": ["full", "backup"],
     },
@@ -994,7 +1034,7 @@ def restore_plan(config: dict[str, Any]) -> dict[str, Any]:
 
 def restore_profile_repos(repos: list[dict[str, str]], profile: str) -> list[dict[str, str]]:
     if profile == "backup":
-        preferred = ("EutherNet", "EutherPunk", "EutherOxide", "EutherBooks", "EutherMaster")
+        preferred = ("EutherNet", "EutherPunk", "EutherPal", "EutherOxide", "EutherBooks", "EutherMaster")
         return [
             repo for repo in repos
             if repo.get("remote") and any(part in repo.get("path", "") for part in preferred)
@@ -1685,6 +1725,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
     edges.extend(
         [
             {"from": "eutherpunk", "to": "ollama", "label": "chat model", "type": "ai"},
+            {"from": "eutherpal", "to": "ollama", "label": "bank LLM via reverse SSH", "type": "ai"},
             {"from": "eutherpunk", "to": "imagegen", "label": "map render", "type": "ai"},
             {"from": "backups", "to": "eutherbooks", "label": "library/audio", "type": "backup"},
             {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data", "type": "backup"},

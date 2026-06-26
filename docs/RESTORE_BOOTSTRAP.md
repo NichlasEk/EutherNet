@@ -62,6 +62,7 @@ their repositories exist in the latest inventory:
 
 - EutherNet: user service, refresh timer, local API on `127.0.0.1:8791`.
 - EutherPunk: local AI gateway, chat server, local API on `127.0.0.1:8787`.
+- EutherPal: Swedish Monopoly TV/mobile/admin game server on `127.0.0.1:8793`, with bank LLM over local Ollama tunnel `127.0.0.1:11434`.
 - EutherOxide: host service, Caddy reverse proxy, `/srv` cleanup timer.
 - EutherBooks: FastAPI service, generated-audio cleanup timer, Piper assets.
 - EutherSight: Frigate/camera service state, local AI worker, EutherBird audio

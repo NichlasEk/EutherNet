@@ -96,6 +96,12 @@ name = "restart-eutherpunkd"
 description = "Restart the EutherPunk user service."
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
 
+
+[[commands.allowed]]
+name = "restart-eutherpal"
+description = "Restart the EutherPal user service."
+command = "/usr/bin/systemctl --user restart eutherpal.service && /usr/bin/systemctl --user is-active eutherpal.service"
+
 [[commands.allowed]]
 name = "euthersight-health"
 description = "Show EutherSight AI, SecondSight, and EutherBird health through the EutherSight AI tunnel."
