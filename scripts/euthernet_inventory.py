@@ -261,6 +261,8 @@ def collect(config: dict[str, Any]) -> dict[str, Any]:
         output["collectors"]["system"] = command_group(config, SYSTEM_COMMANDS)
     if "systemd" in enabled:
         output["collectors"]["systemd"] = command_group(config, SYSTEMD_COMMANDS)
+    if "systemd_user" in enabled:
+        output["collectors"]["systemd_user"] = command_group(config, USER_SYSTEMD_COMMANDS)
     if "network" in enabled:
         output["collectors"]["network"] = command_group(config, NETWORK_COMMANDS)
     if "git_repositories" in enabled:
