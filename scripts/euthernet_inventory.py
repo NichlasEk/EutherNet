@@ -55,6 +55,18 @@ SYSTEMD_COMMANDS = [
     RemoteCommand("timers", "systemctl list-timers --all --no-pager --plain"),
 ]
 
+USER_SYSTEMD_COMMANDS = [
+    RemoteCommand(
+        "failed_services",
+        "systemctl --user list-units --type=service --state=failed --no-pager --plain",
+    ),
+    RemoteCommand(
+        "running_services",
+        "systemctl --user list-units --type=service --state=running --no-pager --plain",
+    ),
+    RemoteCommand("timers", "systemctl --user list-timers --all --no-pager --plain"),
+]
+
 NETWORK_COMMANDS = [
     RemoteCommand("addresses", "hostname -I"),
     RemoteCommand("listening_tcp_udp", "ss -tuln"),

@@ -22,6 +22,12 @@ name = "systemd"
 enabled = true
 interval_seconds = 900
 
+
+[[collectors]]
+name = "systemd_user"
+enabled = true
+interval_seconds = 900
+
 [[collectors]]
 name = "git_repositories"
 enabled = true

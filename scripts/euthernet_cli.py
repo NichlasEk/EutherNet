@@ -39,6 +39,20 @@ def recent_healthy_snapshots(state_root: pathlib.Path, count: int = 2) -> list[d
     return list(reversed(snapshots))
 
 
+
+
+def systemd_stdout(snapshot: dict[str, Any], command: str) -> str:
+    collectors = snapshot.get("collectors", {})
+    return "\n".join(
+        part
+        for part in [
+            collectors.get("systemd", {}).get(command, {}).get("stdout", ""),
+            collectors.get("systemd_user", {}).get(command, {}).get("stdout", ""),
+        ]
+        if part
+    )
+
+
 def parse_repos(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     scan = snapshot.get("collectors", {}).get("git_repositories", {}).get("scan", {})
     repos: list[dict[str, str]] = []
@@ -61,12 +75,7 @@ def parse_repos(snapshot: dict[str, Any]) -> list[dict[str, str]]:
 def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
     repos = parse_repos(snapshot)
     dirty_repos = [repo for repo in repos if int(repo.get("dirty_lines") or "0") > 0]
-    failed_text = (
-        snapshot.get("collectors", {})
-        .get("systemd", {})
-        .get("failed_services", {})
-        .get("stdout", "")
-    )
+    failed_text = systemd_stdout(snapshot, "failed_services")
     failed_services = failed_service_lines(failed_text)
     disk_text = (
         snapshot.get("collectors", {})
@@ -912,8 +921,8 @@ def drift_changes(config: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
-    old_failed = set(failed_service_lines(previous.get("collectors", {}).get("systemd", {}).get("failed_services", {}).get("stdout", "")))
-    new_failed = set(failed_service_lines(current.get("collectors", {}).get("systemd", {}).get("failed_services", {}).get("stdout", "")))
+    old_failed = set(failed_service_lines(systemd_stdout(previous, "failed_services")))
+    new_failed = set(failed_service_lines(systemd_stdout(current, "failed_services")))
     for line in sorted(new_failed - old_failed):
         items.append({"type": "failed_service_added", "message": line})
     for line in sorted(old_failed - new_failed):
@@ -1539,9 +1548,7 @@ def restore_drill(config: dict[str, Any]) -> dict[str, Any]:
     ports = parse_listening_ports(
         snapshot.get("collectors", {}).get("network", {}).get("listening_tcp_udp", {}).get("stdout", "")
     )
-    failed_services = failed_service_lines(
-        snapshot.get("collectors", {}).get("systemd", {}).get("failed_services", {}).get("stdout", "")
-    )
+    failed_services = failed_service_lines(systemd_stdout(snapshot, "failed_services"))
     results = [service_drill_result(service, repos, ports, failed_services) for service in services]
     overall_score = round(sum(result["score"] for result in results) / len(results)) if results else 0
     overall_status = "green"
@@ -1624,10 +1631,9 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
     repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), "full"), "full")
     services = service_restore_plan(repos, "full")
     collectors = snapshot.get("collectors", {})
-    systemd = collectors.get("systemd", {})
     network = collectors.get("network", {})
-    running_units = parse_running_service_units(systemd.get("running_services", {}).get("stdout", ""))
-    failed_units = set(failed_service_lines(systemd.get("failed_services", {}).get("stdout", "")))
+    running_units = parse_running_service_units(systemd_stdout(snapshot, "running_services"))
+    failed_units = set(failed_service_lines(systemd_stdout(snapshot, "failed_services")))
     listening_services = parse_listening_services(network.get("listening_processes", {}).get("stdout", ""))
     ssh_connections = parse_ssh_connections(network.get("ssh_connections", {}).get("stdout", ""))
     ports = sorted(
