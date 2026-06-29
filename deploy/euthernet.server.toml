@@ -49,6 +49,9 @@ send_raw_logs = false
 enabled = true
 transport = "stdio"
 
+[eutherium]
+host_dir = "/home/nichlas/EutherOxide/.euther-host"
+
 [http]
 enabled = true
 host = "127.0.0.1"

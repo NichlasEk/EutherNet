@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -103,6 +105,9 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/run":
             self.handle_run()
+            return
+        if path == "/api/euthernet/eutherium/award":
+            self.handle_eutherium_award()
             return
         self.write_error(HTTPStatus.NOT_FOUND, "unknown endpoint")
 
@@ -245,6 +250,17 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             },
         )
 
+
+    def handle_eutherium_award(self) -> None:
+        try:
+            payload = self.read_json()
+        except json.JSONDecodeError:
+            self.write_error(HTTPStatus.BAD_REQUEST, "invalid json")
+            return
+        result = award_eutherium(self.config, payload)
+        status = HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST
+        self.write_json(status, result)
+
     def handle_run(self) -> None:
         try:
             payload = self.read_json()
@@ -257,6 +273,132 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         result = run_allowed_command(self.config, name)
         self.write_json(HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+
+
+def award_eutherium(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    user = clean_user(str(payload.get("user", payload.get("userId", ""))))
+    if not user:
+        return {"ok": False, "error": "user is required"}
+    try:
+        amount = int(payload.get("amount", 0))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "amount must be an integer"}
+    if amount <= 0 or amount > 1_000_000:
+        return {"ok": False, "error": "amount must be between 1 and 1000000"}
+    reason = str(payload.get("reason", "")).strip()
+    if not reason or len(reason) > 160:
+        return {"ok": False, "error": "reason must be 1-160 characters"}
+    source = clean_source(str(payload.get("source", "euthernet"))) or "euthernet"
+    created_by = clean_source(str(payload.get("createdBy", source))) or source
+    idempotency_key = clean_idempotency(str(payload.get("idempotencyKey", "")))
+    host_dir = eutherium_host_dir(config)
+    users = load_eutheroxide_users(host_dir / "users.toml")
+    if user not in users:
+        return {"ok": False, "error": f"unknown or banned user: {user}"}
+    ledger_path = host_dir / "eutherium" / "ledger.json"
+    ledger = load_json_list(ledger_path)
+    entry_id = eutherium_entry_id(source, user, idempotency_key)
+    for entry in ledger:
+        if str(entry.get("id", "")) == entry_id:
+            return {
+                "ok": True,
+                "awarded": False,
+                "duplicate": True,
+                "entry": entry,
+                "balance": eutherium_balance(ledger, user),
+            }
+    entry = {
+        "id": entry_id,
+        "userId": user,
+        "amount": amount,
+        "reason": reason,
+        "source": source,
+        "createdByUserId": created_by,
+        "createdUnixMs": int(time.time() * 1000),
+    }
+    ledger.append(entry)
+    save_json_list(ledger_path, ledger)
+    return {
+        "ok": True,
+        "awarded": True,
+        "duplicate": False,
+        "entry": entry,
+        "balance": eutherium_balance(ledger, user),
+    }
+
+
+def eutherium_host_dir(config: dict[str, Any]) -> pathlib.Path:
+    configured = config.get("eutherium", {}).get("host_dir")
+    return pathlib.Path(configured or "/home/nichlas/EutherOxide/.euther-host")
+
+
+def load_eutheroxide_users(path: pathlib.Path) -> set[str]:
+    try:
+        contents = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return set()
+    users: set[str] = set()
+    current_name = ""
+    current_banned = False
+    in_user = False
+    for raw in contents.splitlines() + ["[[user]]"]:
+        line = raw.strip()
+        if line == "[[user]]":
+            if in_user and current_name and not current_banned:
+                users.add(current_name)
+            in_user = True
+            current_name = ""
+            current_banned = False
+            continue
+        if not in_user or "=" not in line:
+            continue
+        key, value = [part.strip() for part in line.split("=", 1)]
+        if key == "name":
+            current_name = value.strip().strip('"')
+        elif key == "banned":
+            current_banned = value.lower() == "true"
+    return users
+
+
+def load_json_list(path: pathlib.Path) -> list[dict[str, Any]]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    value = json.loads(raw)
+    if not isinstance(value, list):
+        raise ValueError(f"expected JSON list in {path}")
+    return [item for item in value if isinstance(item, dict)]
+
+
+def save_json_list(path: pathlib.Path, value: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def eutherium_balance(ledger: list[dict[str, Any]], user: str) -> int:
+    return sum(int(entry.get("amount", 0)) for entry in ledger if entry.get("userId") == user)
+
+
+def eutherium_entry_id(source: str, user: str, idempotency_key: str) -> str:
+    if idempotency_key:
+        return f"euthernet-{source}-{idempotency_key}"
+    return f"euthernet-{source}-{int(time.time() * 1000)}-{clean_idempotency(user)}"
+
+
+def clean_user(value: str) -> str:
+    return "".join(ch for ch in value.strip()[:80] if ch.isalnum() or ch in "_.-")
+
+
+def clean_source(value: str) -> str:
+    return "".join(ch for ch in value.strip().lower()[:48] if ch.isalnum() or ch in "_.-")
+
+
+def clean_idempotency(value: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_.:-]", "-", value.strip())[:120]
+    return clean.strip("-")
 
 
 def main(argv: list[str]) -> int:

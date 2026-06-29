@@ -128,6 +128,7 @@ GET  /api/euthernet/map
 POST /api/euthernet/ask
 POST /api/euthernet/refresh
 POST /api/euthernet/run
+POST /api/euthernet/eutherium/award
 ```
 
 Examples:
@@ -147,6 +148,10 @@ curl -fsS http://127.0.0.1:8791/api/euthernet/map
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \
   -H 'Content-Type: application/json' \
   -d '{"question":"vilka repos är dirty?"}'
+curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/eutherium/award \
+  -H 'Content-Type: application/json' \
+  -d '{"user":"nichlas","amount":1000,"reason":"EutherPål vinst","source":"eutherpal","idempotencyKey":"PAL-001-1"}'
+
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/run \
   -H 'Content-Type: application/json' \
   -d '{"name":"disk"}'
@@ -182,6 +187,7 @@ Recommended EutherPunk chat tools:
 - `server_map` -> `GET /api/euthernet/map`
 - `server_refresh` -> `POST /api/euthernet/refresh`
 - `server_run` -> `POST /api/euthernet/run`
+- `eutherium_award` -> `POST /api/euthernet/eutherium/award`; appends an idempotent Eutherium ledger award for a known, unbanned EutherOxide user.
 
 For the first chat UI pass, slash commands are enough:
 
