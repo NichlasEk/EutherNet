@@ -318,13 +318,57 @@ def award_eutherium(config: dict[str, Any], payload: dict[str, Any]) -> dict[str
     }
     ledger.append(entry)
     save_json_list(ledger_path, ledger)
+    account_log_path = append_user_account_log(host_dir, user, entry, idempotency_key)
     return {
         "ok": True,
         "awarded": True,
         "duplicate": False,
         "entry": entry,
         "balance": eutherium_balance(ledger, user),
+        "accountLog": str(account_log_path),
     }
+
+
+def append_user_account_log(
+    host_dir: pathlib.Path,
+    user: str,
+    entry: dict[str, Any],
+    idempotency_key: str,
+) -> pathlib.Path:
+    path = host_dir / "user-data" / host_user_storage_name(user) / "eutherium" / "account-log.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "[[entry]]",
+        f"id = \"{toml_escape(str(entry.get('id', '')))}\"",
+        f"type = \"award\"",
+        f"source = \"{toml_escape(str(entry.get('source', '')))}\"",
+        f"reason = \"{toml_escape(str(entry.get('reason', '')))}\"",
+        f"amount = {int(entry.get('amount', 0))}",
+        f"created_by = \"{toml_escape(str(entry.get('createdByUserId', '')))}\"",
+        f"created_unix_ms = {int(entry.get('createdUnixMs', 0))}",
+    ]
+    if idempotency_key:
+        lines.append(f"idempotency_key = \"{toml_escape(idempotency_key)}\"")
+    if str(entry.get("source", "")) == "eutherpal":
+        lines.append("project = \"EutherPål\"")
+        lines.append("event = \"game_won\"")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n\n")
+    return path
+
+
+def host_user_storage_name(user: str) -> str:
+    output = ""
+    for byte in user.encode("utf-8"):
+        if (48 <= byte <= 57) or (65 <= byte <= 90) or (97 <= byte <= 122) or byte in (45, 95):
+            output += chr(byte)
+        else:
+            output += f"%{byte:02x}"
+    return output or "user"
+
+
+def toml_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def eutherium_host_dir(config: dict[str, Any]) -> pathlib.Path:

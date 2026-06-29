@@ -52,4 +52,4 @@ static web UI. It is mutable host state that must survive restore.
 
 ## Award Backbone
 
-EutherNet exposes `/api/euthernet/eutherium/award` for server-side project rewards. Callers send `user`, `amount`, `reason`, `source`, and an optional `idempotencyKey`. EutherNet validates the target against EutherOxide host users, appends to the Eutherium ledger, and treats repeated idempotency keys as already awarded instead of issuing duplicate Eutherium.
+EutherNet exposes `/api/euthernet/eutherium/award` for server-side project rewards. Callers send `user`, `amount`, `reason`, `source`, and an optional `idempotencyKey`. EutherNet validates the target against EutherOxide host users, appends to the Eutherium ledger, and treats repeated idempotency keys as already awarded instead of issuing duplicate Eutherium. Successful new awards are also appended to `/home/nichlas/EutherOxide/.euther-host/user-data/<user>/eutherium/account-log.toml` so each user has a readable account log that shows project source, reason, amount, and event metadata such as `event = "game_won"` for EutherPål.
