@@ -15,6 +15,8 @@ tokens, and raw dumps from live services must stay outside git.
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) explains how to run the first collector.
 - [docs/EUTHERIUM_JOX_AWARENESS.md](docs/EUTHERIUM_JOX_AWARENESS.md) documents
   how EutherNet maps and restores Eutherium, Joxbox, and `.jox` artifacts.
+- [docs/EUTHERIUM_AWARD_FLOW.md](docs/EUTHERIUM_AWARD_FLOW.md) explains
+  how local projects should award Eutherium through EutherNet.
 - [docs/LOCAL_AI_COMPATIBILITY_MAP.md](docs/LOCAL_AI_COMPATIBILITY_MAP.md)
   records safe, path-neutral compatibility notes for local AI profiles used by
   EutherPunk and SecondSight.
