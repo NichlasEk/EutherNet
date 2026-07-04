@@ -1694,6 +1694,8 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         if service["name"] == "EutherOxide":
             nodes.extend(eutherium_jox_nodes())
             edges.extend(eutherium_jox_edges(service_id))
+            nodes.extend(eutherstudio_nodes(running_units, failed_units))
+            edges.extend(eutherstudio_edges(service_id))
     for item in listening_services:
         port_id = f"port-{item['protocol']}-{item['port']}".replace("/", "-")
         nodes.append(
@@ -1733,6 +1735,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             {"from": "eutherpunk", "to": "ollama", "label": "chat model", "type": "ai"},
             {"from": "eutherpal", "to": "ollama", "label": "bank LLM via reverse SSH", "type": "ai"},
             {"from": "eutherpunk", "to": "imagegen", "label": "map render", "type": "ai"},
+            {"from": "backups", "to": "eutherstudio-storage", "label": "generated music + metadata", "type": "backup"},
             {"from": "backups", "to": "eutherbooks", "label": "library/audio", "type": "backup"},
             {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data", "type": "backup"},
         ]
@@ -1760,6 +1763,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         "Create a detailed cyberpunk network map of the EutherVerse home server. "
         "Show a central server tower labeled EutherServer, a neon reverse proxy gate labeled apothictech.se/Caddy, "
         f"service districts labeled {service_names}, an Eutherium vault district with Joxbox artifact containers, "
+        "an EutherStudio music district with a web portal, per-user song vault, share links, RTX 4090 worker, ACE-Step music core, and ACE lyrics model, "
         "a provenance ledger, trophy rooms, local AI cores labeled Ollama qwen3-coder and Image Generator, "
         "backup vaults for /srv, ROMs, EutherBooks library/audio, and glowing data links annotated with ports. "
         "Style: readable technical diagram, isometric cyberpunk city, dark background, neon cyan magenta amber accents, "
@@ -1819,6 +1823,83 @@ def eutherium_jox_nodes() -> list[dict[str, str]]:
             "detail": ".euther-host/users/*/eutherium/trophy-room.json layouts and inspectable JOX trophies",
         },
     ]
+
+
+def eutherstudio_nodes(running_units: set[str], failed_units: set[str]) -> list[dict[str, str]]:
+    worker_status = service_status_from_units(["eutherstudio-worker.service"], running_units, failed_units)
+    ace_status = service_status_from_units(["eutherstudio-ace-api.service"], running_units, failed_units)
+    return [
+        {
+            "id": "eutherstudio",
+            "label": "EutherStudio",
+            "type": "service",
+            "status": "configured",
+            "detail": "/studio music UI, prompt + lyrics + per-user library behind GenerateMusic permission",
+        },
+        {
+            "id": "eutherstudio-storage",
+            "label": "Studio User Music",
+            "type": "storage",
+            "status": "stateful",
+            "detail": "/srv/eutherstudio/users/{user}/output + metadata + prompts; delete removes server artifacts",
+        },
+        {
+            "id": "eutherstudio-share",
+            "label": "Studio Share Links",
+            "type": "domain",
+            "status": "stateful",
+            "detail": "metadata shared_with recipients; visible only to active users with Music permission",
+        },
+        {
+            "id": "rtx4090-worker",
+            "label": "RTX 4090 Worker",
+            "type": "ai",
+            "status": worker_status,
+            "detail": "192.168.32.88:8795 EutherStudio GPU worker; one job at a time; pauses Comfy/Dots when approved",
+        },
+        {
+            "id": "ace-step-core",
+            "label": "ACE-Step Music Core",
+            "type": "ai",
+            "status": ace_status,
+            "detail": "127.0.0.1:8001 release_task/query_result music generation",
+        },
+        {
+            "id": "ace-lyrics-lm",
+            "label": "ACE Lyrics LM",
+            "type": "ai",
+            "status": ace_status,
+            "detail": "ACE-Step create_sample/format_input, local acestep-5Hz-lm-1.7B lyrics/caption model",
+        },
+        {
+            "id": "studio-gpu-blockers",
+            "label": "Comfy/Dots GPU Blockers",
+            "type": "service",
+            "status": "managed",
+            "detail": "Worker detects ComfyUI, comfy-selector and Dots TTS before generation; admin can pause them",
+        },
+    ]
+
+
+def eutherstudio_edges(eutheroxide_id: str) -> list[dict[str, str]]:
+    return [
+        {"from": eutheroxide_id, "to": "eutherstudio", "label": "/studio + /api/studio", "type": "hosts"},
+        {"from": "eutherstudio", "to": "eutherstudio-storage", "label": "per-user output/metadata", "type": "state"},
+        {"from": "eutherstudio", "to": "eutherstudio-share", "label": "share/unshare metadata", "type": "state"},
+        {"from": "eutherstudio-share", "to": "eutherstudio-storage", "label": "shared playback access", "type": "access"},
+        {"from": "eutherstudio", "to": "rtx4090-worker", "label": "LAN bearer API 8795", "type": "job"},
+        {"from": "rtx4090-worker", "to": "ace-step-core", "label": "release_task/query_result", "type": "ai"},
+        {"from": "rtx4090-worker", "to": "ace-lyrics-lm", "label": "create_sample/format_input", "type": "ai"},
+        {"from": "rtx4090-worker", "to": "studio-gpu-blockers", "label": "detect/pause/resume", "type": "resource"},
+    ]
+
+
+def service_status_from_units(units: list[str], running_units: set[str], failed_units: set[str]) -> str:
+    if any(unit in running_units for unit in units):
+        return "running"
+    if any(any(unit in line for line in failed_units) for unit in units):
+        return "failed"
+    return "configured"
 
 
 def eutherium_jox_edges(eutheroxide_id: str) -> list[dict[str, str]]:
