@@ -96,6 +96,16 @@ description = "Check the admin-only EutherGate reverse tunnel on server localhos
 command = "/usr/bin/curl -fsS http://127.0.0.1:18787/api/health"
 
 [[commands.allowed]]
+name = "euthergate-turn-health"
+description = "Show TURN relay service state and listening ports without exposing credentials."
+command = "/usr/bin/systemctl is-active euthergate-turn-3478.service euthergate-turn-443-udp.service && /usr/bin/ss -lntup | /usr/bin/grep -E ':(443|3478|491[6-9][0-9])\\b'"
+
+[[commands.allowed]]
+name = "restart-euthergate-turn"
+description = "Restart both EutherGate TURN relays and verify their listeners."
+command = "sudo -n /usr/local/sbin/euthergate-turn-restart"
+
+[[commands.allowed]]
 name = "restart-caddy"
 description = "Restart the Caddy reverse proxy service."
 command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemctl is-active caddy.service"

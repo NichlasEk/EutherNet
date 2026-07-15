@@ -1,5 +1,20 @@
 # EutherNet Runbook
 
+## EutherGate TURN relay
+
+The server map exposes two deterministic, secret-free commands:
+
+- `euthergate-turn-health` checks both coturn system services and their listener
+  ports.
+- `restart-euthergate-turn` calls the narrow root-owned helper
+  `/usr/local/sbin/euthergate-turn-restart` through the allowlisted sudoers
+  entry.
+
+The long-lived TURN shared secret belongs to EutherGate/coturn and must never be
+copied into EutherNet inventory, command output, or map artifacts. Detailed
+topology, NAT ports, credential rotation, and rollback live in EutherGate's
+`docs/turn-relay.md`.
+
 ## Local Inventory Run
 
 Unlock the SSH key for the EutherOxide server before running the collector:

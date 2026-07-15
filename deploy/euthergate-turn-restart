@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+units=(euthergate-turn-3478.service euthergate-turn-443-udp.service)
+/usr/bin/systemctl restart "${units[@]}"
+/usr/bin/systemctl is-active "${units[@]}"
+/usr/bin/ss -lntup | /usr/bin/grep -E ':(443|3478|491[6-9][0-9])\b'
