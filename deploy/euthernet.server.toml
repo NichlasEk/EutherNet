@@ -91,6 +91,11 @@ description = "Restart the EutherHost system service."
 command = "sudo -n /usr/bin/systemctl restart eutherhost.service && /usr/bin/systemctl is-active eutherhost.service"
 
 [[commands.allowed]]
+name = "euthergate-health"
+description = "Check the admin-only EutherGate reverse tunnel on server localhost."
+command = "/usr/bin/curl -fsS http://127.0.0.1:18787/api/health"
+
+[[commands.allowed]]
 name = "restart-caddy"
 description = "Restart the Caddy reverse proxy service."
 command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemctl is-active caddy.service"

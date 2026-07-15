@@ -1696,6 +1696,47 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             edges.extend(eutherium_jox_edges(service_id))
             nodes.extend(eutherstudio_nodes(running_units, failed_units))
             edges.extend(eutherstudio_edges(service_id))
+    gate_listening = any(item.get("port") == "18787" for item in listening_services)
+    gate_status = "running" if gate_listening else "offline"
+    nodes.extend(
+        [
+            {
+                "id": "apansson",
+                "label": "apansson / Wayland workstation",
+                "type": "host",
+                "status": "connected" if gate_listening else "unknown",
+                "detail": "Hyprland session and EutherGate runtime",
+            },
+            {
+                "id": "euthergate",
+                "label": "EutherGate",
+                "type": "service",
+                "status": gate_status,
+                "detail": "euthergate.service + euthergate-tunnel.service",
+            },
+        ]
+    )
+    edges.extend(
+        [
+            {"from": "apansson", "to": "euthergate", "label": "127.0.0.1:8787", "type": "hosts"},
+            {"from": "euthergate", "to": "server", "label": "reverse SSH 127.0.0.1:18787", "type": "ssh"},
+            {"from": "eutheroxide", "to": "euthergate", "label": "admin-only /euthergate/", "type": "proxy"},
+        ]
+    )
+    service_reports.append(
+        {
+            "name": "EutherGate",
+            "status": gate_status,
+            "units": ["euthergate.service", "euthergate-tunnel.service"],
+            "ports": ["8787", "18787"],
+            "repo_path": "/home/nichlas/EutherGate (apansson)",
+            "persistent_paths": [
+                "/home/nichlas/EutherGate/.env",
+                "/home/nichlas/.config/systemd/user/euthergate.service",
+                "/home/nichlas/.config/systemd/user/euthergate-tunnel.service",
+            ],
+        }
+    )
     for item in listening_services:
         port_id = f"port-{item['protocol']}-{item['port']}".replace("/", "-")
         nodes.append(
