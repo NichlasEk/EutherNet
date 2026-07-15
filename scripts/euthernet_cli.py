@@ -1698,6 +1698,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             edges.extend(eutherstudio_edges(service_id))
     gate_listening = any(item.get("port") == "18787" for item in listening_services)
     gate_status = "running" if gate_listening else "offline"
+    forge_status = "reachable" if gate_listening else "unknown"
     nodes.extend(
         [
             {
@@ -1708,34 +1709,74 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
                 "detail": "Hyprland session and EutherGate runtime",
             },
             {
-                "id": "euthergate",
-                "label": "EutherGate",
+                "id": "euthergate-gateway",
+                "label": "EutherGate Gateway",
                 "type": "service",
                 "status": gate_status,
-                "detail": "euthergate.service + euthergate-tunnel.service",
+                "detail": "euthergate.service",
+            },
+            {
+                "id": "euthergate-tunnel",
+                "label": "EutherGate Tunnel",
+                "type": "service",
+                "status": gate_status,
+                "detail": "euthergate-tunnel.service",
+            },
+            {
+                "id": "euthergate-forge",
+                "label": "EutherGate Forge",
+                "type": "service",
+                "status": forge_status,
+                "detail": "euthergate-forge.service",
             },
         ]
     )
     edges.extend(
         [
-            {"from": "apansson", "to": "euthergate", "label": "127.0.0.1:8787", "type": "hosts"},
-            {"from": "euthergate", "to": "server", "label": "reverse SSH 127.0.0.1:18787", "type": "ssh"},
-            {"from": "eutheroxide", "to": "euthergate", "label": "admin-only /euthergate/", "type": "proxy"},
+            {"from": "apansson", "to": "euthergate-gateway", "label": "127.0.0.1:8787", "type": "hosts"},
+            {"from": "apansson", "to": "euthergate-forge", "label": "headless Wayland", "type": "hosts"},
+            {"from": "euthergate-forge", "to": "euthergate-gateway", "label": "desktop stream", "type": "feeds"},
+            {"from": "euthergate-gateway", "to": "euthergate-tunnel", "label": "reverse SSH client", "type": "feeds"},
+            {"from": "euthergate-tunnel", "to": "server", "label": "127.0.0.1:18787", "type": "ssh"},
+            {"from": "eutheroxide", "to": "euthergate-gateway", "label": "admin-only /euthergate/", "type": "proxy"},
         ]
     )
-    service_reports.append(
-        {
-            "name": "EutherGate",
-            "status": gate_status,
-            "units": ["euthergate.service", "euthergate-tunnel.service"],
-            "ports": ["8787", "18787"],
-            "repo_path": "/home/nichlas/EutherGate (apansson)",
-            "persistent_paths": [
-                "/home/nichlas/EutherGate/.env",
-                "/home/nichlas/.config/systemd/user/euthergate.service",
-                "/home/nichlas/.config/systemd/user/euthergate-tunnel.service",
-            ],
-        }
+    service_reports.extend(
+        [
+            {
+                "name": "EutherGate Gateway",
+                "status": gate_status,
+                "units": ["euthergate.service"],
+                "ports": ["8787"],
+                "repo_path": "/home/nichlas/EutherGate (apansson)",
+                "persistent_paths": [
+                    "/home/nichlas/EutherGate/.env",
+                    "/home/nichlas/.config/systemd/user/euthergate.service",
+                ],
+            },
+            {
+                "name": "EutherGate Tunnel",
+                "status": gate_status,
+                "units": ["euthergate-tunnel.service"],
+                "ports": ["18787"],
+                "repo_path": "/home/nichlas/EutherGate (apansson)",
+                "persistent_paths": [
+                    "/home/nichlas/.config/systemd/user/euthergate-tunnel.service",
+                    "/home/nichlas/.ssh/euthersight_tunnel",
+                ],
+            },
+            {
+                "name": "EutherGate Forge",
+                "status": forge_status,
+                "units": ["euthergate-forge.service"],
+                "ports": [],
+                "repo_path": "/home/nichlas/EutherGate (apansson)",
+                "persistent_paths": [
+                    "/home/nichlas/.config/systemd/user/euthergate-forge.service",
+                    "/home/nichlas/EutherGate/config/forge-sway.conf",
+                ],
+            },
+        ]
     )
     for item in listening_services:
         port_id = f"port-{item['protocol']}-{item['port']}".replace("/", "-")
