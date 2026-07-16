@@ -63,85 +63,102 @@ allow_remote = true
 [[commands.allowed]]
 name = "health"
 description = "Show hostname, uptime, failed services, and disk usage."
+mode = "read"
 command = "hostname && uptime && systemctl list-units --type=service --state=failed --no-pager --plain && df -hT"
 
 [[commands.allowed]]
 name = "failed-services"
 description = "List failed systemd services."
+mode = "read"
 command = "systemctl list-units --type=service --state=failed --no-pager --plain"
 
 [[commands.allowed]]
 name = "listening-ports"
 description = "List listening TCP and UDP ports."
+mode = "read"
 command = "ss -tuln"
 
 [[commands.allowed]]
 name = "disk"
 description = "Show filesystem usage."
+mode = "read"
 command = "df -hT"
 
 [[commands.allowed]]
 name = "uptime"
 description = "Show server uptime and load."
+mode = "read"
 command = "uptime"
 
 [[commands.allowed]]
 name = "restart-eutherhost"
 description = "Restart the EutherHost system service."
+mode = "write"
 command = "sudo -n /usr/bin/systemctl restart eutherhost.service && /usr/bin/systemctl is-active eutherhost.service"
 
 [[commands.allowed]]
 name = "euthergate-health"
 description = "Check the admin-only EutherGate reverse tunnel on server localhost."
+mode = "read"
 command = "/usr/bin/curl -fsS http://127.0.0.1:18787/api/health"
 
 [[commands.allowed]]
 name = "euthergate-turn-health"
 description = "Show TURN relay service state and listening ports without exposing credentials."
+mode = "read"
 command = "/usr/bin/systemctl is-active euthergate-turn-3478.service euthergate-turn-443-udp.service && /usr/bin/ss -lntup | /usr/bin/grep -E ':(443|3478|491[6-9][0-9])\\b'"
 
 [[commands.allowed]]
 name = "restart-euthergate-turn"
 description = "Restart both EutherGate TURN relays and verify their listeners."
+mode = "write"
 command = "sudo -n /usr/local/sbin/euthergate-turn-restart"
 
 [[commands.allowed]]
 name = "restart-caddy"
 description = "Restart the Caddy reverse proxy service."
+mode = "write"
 command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemctl is-active caddy.service"
 
 [[commands.allowed]]
 name = "restart-eutherbooks"
 description = "Restart the EutherBooks system service."
+mode = "write"
 command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/systemctl is-active eutherbooks.service"
 
 [[commands.allowed]]
 name = "restart-eutherpunkd"
 description = "Restart the EutherPunk user service."
+mode = "write"
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
 
 
 [[commands.allowed]]
 name = "restart-eutherpal"
 description = "Restart the EutherPal user service."
+mode = "write"
 command = "/usr/bin/systemctl --user restart eutherpal.service && /usr/bin/systemctl --user is-active eutherpal.service"
 
 [[commands.allowed]]
 name = "euthersight-health"
 description = "Show EutherSight AI, SecondSight, and EutherBird health through the EutherSight AI tunnel."
+mode = "read"
 command = "/usr/bin/curl -fsS http://127.0.0.1:15101/health"
 
 [[commands.allowed]]
 name = "euthersight-frigate-health"
 description = "Check whether the Frigate tunnel on 127.0.0.1:15000 returns API stats."
+mode = "read"
 command = "/usr/bin/timeout 8 /usr/bin/curl -fsS http://127.0.0.1:15000/api/stats"
 
 [[commands.allowed]]
 name = "restart-euthersight-frigate-tunnel"
 description = "Restart the local reverse SSH listener for the Frigate tunnel and then check Frigate stats."
+mode = "write"
 command = "sudo -n /usr/local/sbin/euthersight-frigate-tunnel-restart"
 
 [[commands.allowed]]
 name = "restart-euthersight-frigate"
 description = "Restart Frigate on the camera workstation through the EutherSight EutherNet tunnel."
+mode = "write"
 command = "/usr/bin/curl -fsS -X POST http://127.0.0.1:15196/api/euthernet/run -H 'Content-Type: application/json' -d '{\"name\":\"restart-euthersight-frigate\"}' && /usr/bin/curl -fsS http://127.0.0.1:15000/api/yard/latest.jpg --output /tmp/euthersight-server-map-restart-check.jpg && /usr/bin/file /tmp/euthersight-server-map-restart-check.jpg"

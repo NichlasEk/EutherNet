@@ -2061,12 +2061,29 @@ def run_allowed_command(config: dict[str, Any], command_name: str) -> dict[str, 
     if not config.get("commands", {}).get("allow_remote", False):
         return {"ok": False, "error": "remote commands are disabled in config"}
 
+    command = commands[command_name]
+    mode = str(command.get("mode", "")).strip().lower()
+    if mode not in {"read", "write"}:
+        return {
+            "ok": False,
+            "error": "command mode is missing or invalid",
+            "name": command_name,
+        }
+    if mode == "write" and not config.get("security", {}).get("allow_write_actions", False):
+        return {
+            "ok": False,
+            "error": "write actions are disabled in config",
+            "name": command_name,
+            "mode": mode,
+        }
+
     server = config["server"]
-    result = run_configured(config, commands[command_name]["command"], timeout=45)
+    result = run_configured(config, command["command"], timeout=45)
     return {
         "ok": bool(result.get("ok")),
         "name": command_name,
-        "description": commands[command_name].get("description", ""),
+        "description": command.get("description", ""),
+        "mode": mode,
         "returncode": result.get("returncode"),
         "stdout": result.get("stdout", ""),
         "stderr": result.get("stderr", ""),
