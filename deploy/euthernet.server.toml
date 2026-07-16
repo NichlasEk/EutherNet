@@ -11,6 +11,8 @@ state_root = "/home/nichlas/EutherNet/state"
 redact_secrets = true
 write_raw_command_output = false
 allow_write_actions = false
+eutherid_url = "http://127.0.0.1:8792"
+eutherid_internal_token_file = "/etc/eutherid/euthernet-internal-token"
 
 [[collectors]]
 name = "system"
@@ -94,6 +96,8 @@ command = "uptime"
 name = "restart-eutherhost"
 description = "Restart the EutherHost system service."
 mode = "write"
+required_action = "service.restart"
+target = "eutherhost.service"
 command = "sudo -n /usr/bin/systemctl restart eutherhost.service && /usr/bin/systemctl is-active eutherhost.service"
 
 [[commands.allowed]]
@@ -112,24 +116,32 @@ command = "/usr/bin/systemctl is-active euthergate-turn-3478.service euthergate-
 name = "restart-euthergate-turn"
 description = "Restart both EutherGate TURN relays and verify their listeners."
 mode = "write"
+required_action = "service.restart"
+target = "euthergate-turn.service-group"
 command = "sudo -n /usr/local/sbin/euthergate-turn-restart"
 
 [[commands.allowed]]
 name = "restart-caddy"
 description = "Restart the Caddy reverse proxy service."
 mode = "write"
+required_action = "service.restart"
+target = "caddy.service"
 command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemctl is-active caddy.service"
 
 [[commands.allowed]]
 name = "restart-eutherbooks"
 description = "Restart the EutherBooks system service."
 mode = "write"
+required_action = "service.restart"
+target = "eutherbooks.service"
 command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/systemctl is-active eutherbooks.service"
 
 [[commands.allowed]]
 name = "restart-eutherpunkd"
 description = "Restart the EutherPunk user service."
 mode = "write"
+required_action = "service.restart"
+target = "eutherpunkd.service"
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
 
 
@@ -137,6 +149,8 @@ command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/sys
 name = "restart-eutherpal"
 description = "Restart the EutherPal user service."
 mode = "write"
+required_action = "service.restart"
+target = "eutherpal.service"
 command = "/usr/bin/systemctl --user restart eutherpal.service && /usr/bin/systemctl --user is-active eutherpal.service"
 
 [[commands.allowed]]
@@ -155,10 +169,14 @@ command = "/usr/bin/timeout 8 /usr/bin/curl -fsS http://127.0.0.1:15000/api/stat
 name = "restart-euthersight-frigate-tunnel"
 description = "Restart the local reverse SSH listener for the Frigate tunnel and then check Frigate stats."
 mode = "write"
+required_action = "service.restart"
+target = "euthersight-frigate-tunnel.service"
 command = "sudo -n /usr/local/sbin/euthersight-frigate-tunnel-restart"
 
 [[commands.allowed]]
 name = "restart-euthersight-frigate"
 description = "Restart Frigate on the camera workstation through the EutherSight EutherNet tunnel."
 mode = "write"
+required_action = "service.restart"
+target = "euthersight-frigate.service"
 command = "/usr/bin/curl -fsS -X POST http://127.0.0.1:15196/api/euthernet/run -H 'Content-Type: application/json' -d '{\"name\":\"restart-euthersight-frigate\"}' && /usr/bin/curl -fsS http://127.0.0.1:15000/api/yard/latest.jpg --output /tmp/euthersight-server-map-restart-check.jpg && /usr/bin/file /tmp/euthersight-server-map-restart-check.jpg"

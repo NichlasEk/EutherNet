@@ -2046,7 +2046,68 @@ def command_ask(config: dict[str, Any], question: str) -> int:
     return 0
 
 
-def run_allowed_command(config: dict[str, Any], command_name: str) -> dict[str, Any]:
+def consume_eutherid_action_proof(
+    config: dict[str, Any], command: dict[str, Any], authorization: dict[str, Any] | None
+) -> dict[str, Any]:
+    if not isinstance(authorization, dict):
+        return {"ok": False, "error": "EutherID authorization is required"}
+    action_proof = str(authorization.get("action_proof", "")).strip()
+    expected = authorization.get("expected")
+    if not action_proof or not isinstance(expected, dict):
+        return {"ok": False, "error": "EutherID authorization is required"}
+
+    required_action = str(command.get("required_action", "")).strip()
+    target = str(command.get("target", "")).strip()
+    if not required_action or not target:
+        return {"ok": False, "error": "write command authorization metadata is missing"}
+    if (
+        expected.get("command_id") != command.get("name")
+        or expected.get("action") != required_action
+        or expected.get("target") != target
+    ):
+        return {"ok": False, "error": "EutherID authorization binding mismatch"}
+
+    security = config.get("security", {})
+    endpoint = str(security.get("eutherid_url", "")).strip().rstrip("/")
+    token_file = str(security.get("eutherid_internal_token_file", "")).strip()
+    if not endpoint or not token_file:
+        return {"ok": False, "error": "EutherID verifier is not configured"}
+    try:
+        internal_token = pathlib.Path(token_file).read_text(encoding="utf-8").strip()
+    except OSError:
+        return {"ok": False, "error": "EutherID verifier token is unavailable"}
+    if not internal_token:
+        return {"ok": False, "error": "EutherID verifier token is unavailable"}
+
+    payload = json.dumps({"action_proof": action_proof, "expected": expected}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{endpoint}/v1/action-proofs/consume",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-EutherID-Internal-Token": internal_token,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            consumed = json.loads(response.read().decode("utf-8"))
+    except (OSError, urllib.error.URLError, json.JSONDecodeError):
+        return {"ok": False, "error": "EutherID authorization was rejected"}
+    if (
+        consumed.get("command_id") != command.get("name")
+        or consumed.get("action") != required_action
+        or consumed.get("target") != target
+    ):
+        return {"ok": False, "error": "EutherID authorization response mismatch"}
+    return {"ok": True, "authorization": consumed}
+
+
+def run_allowed_command(
+    config: dict[str, Any],
+    command_name: str,
+    authorization: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     commands = {item["name"]: item for item in config.get("commands", {}).get("allowed", [])}
     if command_name not in commands:
         return {
@@ -2076,8 +2137,16 @@ def run_allowed_command(config: dict[str, Any], command_name: str) -> dict[str, 
             "name": command_name,
             "mode": mode,
         }
+    if mode == "write":
+        authorized = consume_eutherid_action_proof(config, command, authorization)
+        if not authorized.get("ok"):
+            return {
+                "ok": False,
+                "error": authorized["error"],
+                "name": command_name,
+                "mode": mode,
+            }
 
-    server = config["server"]
     result = run_configured(config, command["command"], timeout=45)
     return {
         "ok": bool(result.get("ok")),
