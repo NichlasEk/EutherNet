@@ -255,6 +255,40 @@ class CommandPolicyTests(unittest.TestCase):
         body = euthernet_cli.json.loads(request.data.decode("utf-8"))
         self.assertEqual(body, authorization())
 
+    def test_backup_status_exposes_only_unit_health(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout=(
+                "Result=success\n"
+                "ExecMainStatus=0\n"
+                "InactiveExitTimestamp=Fri 2026-07-17 15:41:23 CEST\n"
+            ),
+        )
+        with (
+            mock.patch.object(euthernet_cli.subprocess, "run", return_value=completed),
+            mock.patch.object(
+                euthernet_cli.dt,
+                "datetime",
+                wraps=euthernet_cli.dt.datetime,
+            ) as datetime_mock,
+        ):
+            datetime_mock.now.return_value = euthernet_cli.dt.datetime(2026, 7, 17, 16, 0, 0)
+            result = euthernet_cli.eutherid_backup_status()
+
+        self.assertEqual(result["status"], "healthy")
+        self.assertIn("restore-tested backup: success", result["detail"])
+        self.assertIn("192.168.32.88", result["detail"])
+
+    def test_backup_status_marks_failed_unit_degraded(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout="Result=exit-code\nExecMainStatus=1\nInactiveExitTimestamp=\n",
+        )
+        with mock.patch.object(euthernet_cli.subprocess, "run", return_value=completed):
+            result = euthernet_cli.eutherid_backup_status()
+
+        self.assertEqual(result["status"], "degraded")
+
 
 if __name__ == "__main__":
     unittest.main()

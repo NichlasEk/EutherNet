@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import pathlib
+import subprocess
 import sys
 import textwrap
 import time
@@ -539,6 +541,15 @@ RUNTIME_MAP_SERVICES: list[dict[str, Any]] = [
         "ports": ["3478", "5349"],
     },
 ]
+
+SERVICE_DEPENDENCIES: dict[str, list[str]] = {
+    "EutherBooks": ["EutherLink", "EutherID"],
+    "EutherOxide": ["EutherNet", "EutherID", "Caddy"],
+    "EutherPal": ["EutherNet"],
+    "EutherPunk": ["EutherNet"],
+    "EutherSync": ["EutherOxide"],
+    "EutherGateTURN": ["Caddy"],
+}
 
 
 KNOWN_RESTORE_REPOS: list[dict[str, str | list[str]]] = [
@@ -1671,6 +1682,49 @@ def server_map_toml(snapshot: dict[str, Any], nodes: list[dict[str, str]], edges
     return "\n".join(lines).rstrip() + "\n"
 
 
+def eutherid_backup_status() -> dict[str, str]:
+    """Return a secret-free status for the fixed EutherID backup unit."""
+    try:
+        completed = subprocess.run(
+            [
+                "/usr/bin/systemctl",
+                "show",
+                "eutherid-backup.service",
+                "--property=Result",
+                "--property=ExecMainStatus",
+                "--property=InactiveExitTimestamp",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {"status": "unknown", "detail": "backup unit status unavailable"}
+    values = {}
+    for line in completed.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value.strip()
+    result = values.get("Result", "")
+    exit_status = values.get("ExecMainStatus", "")
+    timestamp = values.get("InactiveExitTimestamp", "")
+    status = "healthy" if completed.returncode == 0 and result == "success" and exit_status == "0" else "degraded"
+    if status == "healthy" and timestamp:
+        try:
+            parsed = dt.datetime.strptime(" ".join(timestamp.split()[1:-1]), "%Y-%m-%d %H:%M:%S")
+            if dt.datetime.now() - parsed > dt.timedelta(hours=48):
+                status = "degraded"
+                result = "stale"
+        except ValueError:
+            pass
+    detail = f"local restore-tested backup: {result or 'unknown'}"
+    if timestamp:
+        detail += f" at {timestamp}"
+    detail += "; off-host pull target 192.168.32.88"
+    return {"status": status, "detail": detail}
+
+
 def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
     snapshot = latest_snapshot(pathlib.Path(config["server"].get("state_root", "state")))
     if snapshot is None:
@@ -1731,6 +1785,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
                 "ports": service.get("ports", []),
                 "repo_path": service.get("repo_path", ""),
                 "persistent_paths": service.get("persistent_paths", []),
+                "depends_on": SERVICE_DEPENDENCIES.get(service["name"], []),
             }
         )
         repo_path = service.get("repo_path", "")
@@ -1751,9 +1806,21 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             edges.extend(eutherium_jox_edges(service_id))
             nodes.extend(eutherstudio_nodes(running_units, failed_units))
             edges.extend(eutherstudio_edges(service_id))
+    known_node_ids = {node["id"] for node in nodes}
+    service_node_ids = {service["name"]: service["name"].lower() for service in services}
+    service_node_ids.update({"Caddy": "caddy", "EutherNet": "euthernet", "EutherID": "eutherid"})
+    for service_name, dependencies in SERVICE_DEPENDENCIES.items():
+        source = service_node_ids.get(service_name)
+        if not source or source not in known_node_ids:
+            continue
+        for dependency in dependencies:
+            target = service_node_ids.get(dependency)
+            if target and target in known_node_ids:
+                edges.append({"from": source, "to": target, "label": "depends on", "type": "dependency"})
     gate_listening = any(item.get("port") == "18787" for item in listening_services)
     gate_status = "running" if gate_listening else "offline"
     forge_status = "reachable" if gate_listening else "unknown"
+    backup = eutherid_backup_status()
     nodes.extend(
         [
             {
@@ -1864,7 +1931,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         [
             {"id": "ollama", "label": "Local Ollama / qwen3-coder", "type": "ai", "status": "configured", "detail": "chat model endpoint"},
             {"id": "imagegen", "label": "Image Generator", "type": "ai", "status": "configured", "detail": "ComfyUI/image generation"},
-            {"id": "backups", "label": "Backup Data", "type": "storage", "status": "planned", "detail": "restore/backup manifests"},
+            {"id": "backups", "label": "EutherID Backup Vault", "type": "storage", "status": backup["status"], "detail": backup["detail"]},
         ]
     )
     edges.extend(
