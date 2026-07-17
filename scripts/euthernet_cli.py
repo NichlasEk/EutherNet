@@ -521,6 +521,24 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
     },
 ]
 
+RUNTIME_MAP_SERVICES: list[dict[str, Any]] = [
+    {
+        "name": "EutherID",
+        "systemd": ["eutherid.service"],
+        "ports": ["8792"],
+    },
+    {
+        "name": "EutherWatchdog",
+        "systemd": ["euther-watchdog.service"],
+        "ports": [],
+    },
+    {
+        "name": "EutherGateTURN",
+        "systemd": ["euthergate-turn-3478.service", "euthergate-turn-443-udp.service"],
+        "ports": ["3478", "5349"],
+    },
+]
+
 
 KNOWN_RESTORE_REPOS: list[dict[str, str | list[str]]] = [
     {
@@ -1659,6 +1677,11 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
 
     repos = with_known_restore_repos(restore_profile_repos(parse_repos(snapshot), "full"), "full")
     services = service_restore_plan(repos, "full")
+    known_service_names = {service["name"] for service in services}
+    services.extend(
+        service for service in RUNTIME_MAP_SERVICES
+        if service["name"] not in known_service_names
+    )
     collectors = snapshot.get("collectors", {})
     network = collectors.get("network", {})
     running_units = parse_running_service_units(systemd_stdout(snapshot, "running_services"))
@@ -1709,17 +1732,19 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
                 "persistent_paths": service.get("persistent_paths", []),
             }
         )
-        repo_id = f"{service_id}-repo"
-        nodes.append(
-            {
-                "id": repo_id,
-                "label": pathlib.Path(service["repo_path"]).name,
-                "type": "repo",
-                "status": "present",
-                "detail": service["repo_path"],
-            }
-        )
-        edges.append({"from": repo_id, "to": service_id, "label": "deploys", "type": "deploy"})
+        repo_path = service.get("repo_path", "")
+        if repo_path:
+            repo_id = f"{service_id}-repo"
+            nodes.append(
+                {
+                    "id": repo_id,
+                    "label": pathlib.Path(repo_path).name,
+                    "type": "repo",
+                    "status": "present",
+                    "detail": repo_path,
+                }
+            )
+            edges.append({"from": repo_id, "to": service_id, "label": "deploys", "type": "deploy"})
         if service["name"] == "EutherOxide":
             nodes.extend(eutherium_jox_nodes())
             edges.extend(eutherium_jox_edges(service_id))
