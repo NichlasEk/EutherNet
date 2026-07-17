@@ -404,6 +404,35 @@ SERVICE_RESTORE_CATALOG: list[dict[str, Any]] = [
         ],
     },
     {
+        "name": "EutherSync",
+        "repo_path": "/home/nichlas/EutherOxide",
+        "profiles": ["full", "backup"],
+        "systemd": ["euthersync.service"],
+        "ports": ["3000"],
+        "packages": ["nodejs", "systemd"],
+        "persistent_paths": [
+            "/home/nichlas/euthersync-storage",
+            "/home/nichlas/EutherOxide/.euther-host/users.toml",
+            "/home/nichlas/EutherOxide/.euther-host/user-data",
+            "/etc/systemd/system/euthersync.service",
+            "/etc/systemd/system/euthersync.service.d",
+        ],
+        "steps": [
+            "cd /home/nichlas/EutherOxide/apps/euthersync",
+            "sudo test -f /etc/systemd/system/euthersync.service",
+            "sudo systemctl daemon-reload",
+            "sudo systemctl enable --now euthersync.service",
+        ],
+        "verify": [
+            "sudo systemctl is-active euthersync.service",
+            "curl -fsS http://127.0.0.1:3000/",
+        ],
+        "notes": [
+            "EutherSync is hosted inside the EutherOxide repository but runs as its own system service and map node.",
+            "Restore per-user sync data and the systemd unit from backup before enabling the service.",
+        ],
+    },
+    {
         "name": "EutherBooks",
         "repo_path": "/home/nichlas/EutherBooks",
         "profiles": ["full", "backup"],
