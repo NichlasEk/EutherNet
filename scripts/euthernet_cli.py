@@ -6,6 +6,7 @@ import json
 import pathlib
 import sys
 import textwrap
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -2191,15 +2192,25 @@ def run_allowed_command(
             "name": command_name,
             "mode": mode,
         }
+    if mode == "write" and command.get("enabled") is not True:
+        return {
+            "ok": False,
+            "error": "write command is not enabled",
+            "name": command_name,
+            "mode": mode,
+        }
     consumed_authorization: dict[str, Any] | None = None
+    operation_started = time.time()
+    preflight = run_command_stage(config, command, "preflight") if mode == "write" else None
+    if preflight is not None and not preflight["ok"]:
+        return {
+            "ok": False,
+            "error": "service preflight failed",
+            "name": command_name,
+            "mode": mode,
+            "operation": operation_result("blocked", operation_started, preflight=preflight),
+        }
     if mode == "write":
-        if command.get("enabled") is not True:
-            return {
-                "ok": False,
-                "error": "write command is not enabled",
-                "name": command_name,
-                "mode": mode,
-            }
         authorized = consume_eutherid_action_proof(config, command, authorization)
         if not authorized.get("ok"):
             return {
@@ -2211,8 +2222,23 @@ def run_allowed_command(
         consumed_authorization = authorized.get("authorization")
 
     result = run_configured(config, command["command"], timeout=45)
+    action = stage_result(result)
+    verification: dict[str, Any] | None = None
+    if mode == "write" and action["ok"]:
+        settle_seconds = max(0.0, min(float(command.get("settle_seconds", 0)), 10.0))
+        if settle_seconds:
+            time.sleep(settle_seconds)
+        verification = run_command_stage(config, command, "verify")
+    operation_status = "healthy"
+    error = ""
+    if not action["ok"]:
+        operation_status = "failed"
+        error = "restart command failed"
+    elif verification is not None and not verification["ok"]:
+        operation_status = "degraded"
+        error = "post-restart verification failed"
     response = {
-        "ok": bool(result.get("ok")),
+        "ok": operation_status == "healthy",
         "name": command_name,
         "description": command.get("description", ""),
         "mode": mode,
@@ -2220,9 +2246,84 @@ def run_allowed_command(
         "stdout": result.get("stdout", ""),
         "stderr": result.get("stderr", ""),
     }
+    if mode == "write":
+        response["operation"] = operation_result(
+            operation_status,
+            operation_started,
+            preflight=preflight,
+            action=action,
+            verification=verification,
+        )
+    if error:
+        response["error"] = error
     if consumed_authorization is not None:
         response["authorization"] = consumed_authorization
     return response
+
+
+def stage_result(result: dict[str, Any]) -> dict[str, Any]:
+    stdout = str(result.get("stdout", "")).strip()
+    stderr = str(result.get("stderr", "")).strip()
+    summary = (stdout or stderr or ("ok" if result.get("ok") else "failed")).splitlines()[-1]
+    return {
+        "ok": bool(result.get("ok")),
+        "returncode": result.get("returncode"),
+        "summary": summary[:240],
+    }
+
+
+def run_command_stage(
+    config: dict[str, Any], command: dict[str, Any], field: str
+) -> dict[str, Any] | None:
+    stage_command = str(command.get(field, "")).strip()
+    if not stage_command:
+        return None
+    started = time.monotonic()
+    result = stage_result(run_configured(config, stage_command, timeout=15))
+    result["duration_ms"] = int((time.monotonic() - started) * 1000)
+    return result
+
+
+def operation_result(
+    status: str,
+    started: float,
+    *,
+    preflight: dict[str, Any] | None = None,
+    action: dict[str, Any] | None = None,
+    verification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    completed = time.time()
+    return {
+        "status": status,
+        "started_at": int(started * 1000),
+        "completed_at": int(completed * 1000),
+        "duration_ms": int((completed - started) * 1000),
+        "preflight": preflight,
+        "action": action,
+        "verification": verification,
+        "rollback": {"attempted": False, "reason": "automatic rollback is not safe for this handle"},
+    }
+
+
+def preflight_allowed_command(config: dict[str, Any], command_name: str) -> dict[str, Any]:
+    commands = {item["name"]: item for item in config.get("commands", {}).get("allowed", [])}
+    command = commands.get(command_name)
+    if command is None:
+        return {"ok": False, "error": "unknown command", "name": command_name}
+    if command.get("mode") != "write" or command.get("enabled") is not True:
+        return {"ok": False, "error": "write command is not enabled", "name": command_name}
+    if not config.get("commands", {}).get("allow_remote", False) or not config.get("security", {}).get("allow_write_actions", False):
+        return {"ok": False, "error": "write actions are disabled in config", "name": command_name}
+    result = run_command_stage(config, command, "preflight")
+    if result is None:
+        return {"ok": True, "name": command_name, "status": "ready", "preflight": {"ok": True, "summary": "no preflight required"}}
+    return {
+        "ok": bool(result["ok"]),
+        "name": command_name,
+        "status": "ready" if result["ok"] else "blocked",
+        "error": "" if result["ok"] else "service preflight failed",
+        "preflight": result,
+    }
 
 
 def command_run(config: dict[str, Any], command_name: str) -> int:

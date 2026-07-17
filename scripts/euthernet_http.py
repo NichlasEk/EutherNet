@@ -21,6 +21,7 @@ from euthernet_cli import (
     latest_snapshot,
     operational_summary,
     parse_repos,
+    preflight_allowed_command,
     restore_drill,
     restore_bundle,
     restore_plan,
@@ -105,6 +106,9 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/run":
             self.handle_run()
+            return
+        if path == "/api/euthernet/preflight":
+            self.handle_preflight()
             return
         if path == "/api/euthernet/eutherium/award":
             self.handle_eutherium_award()
@@ -286,6 +290,19 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
         else:
             status = HTTPStatus.BAD_REQUEST
         self.write_json(status, result)
+
+    def handle_preflight(self) -> None:
+        try:
+            payload = self.read_json()
+        except json.JSONDecodeError:
+            self.write_error(HTTPStatus.BAD_REQUEST, "invalid json")
+            return
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            self.write_error(HTTPStatus.BAD_REQUEST, "name is required")
+            return
+        result = preflight_allowed_command(self.config, name)
+        self.write_json(HTTPStatus.OK if result.get("ok") else HTTPStatus.CONFLICT, result)
 
 
 def award_eutherium(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:

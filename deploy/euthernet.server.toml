@@ -109,6 +109,9 @@ enabled = true
 required_action = "service.restart"
 target = "eutherhost.service"
 command = "sudo -n /usr/bin/systemctl restart eutherhost.service && /usr/bin/systemctl is-active eutherhost.service"
+preflight = "sudo -n /usr/bin/systemctl is-active eutherhost.service"
+verify = "sudo -n /usr/bin/systemctl is-active eutherhost.service"
+settle_seconds = 2
 
 [[commands.allowed]]
 name = "euthergate-health"
@@ -130,6 +133,9 @@ required_action = "service.restart"
 enabled = true
 target = "euthergate-turn.service-group"
 command = "sudo -n /usr/local/sbin/euthergate-turn-restart"
+preflight = "/usr/bin/systemctl is-active euthergate-turn-3478.service euthergate-turn-443-udp.service"
+verify = "/usr/bin/systemctl is-active euthergate-turn-3478.service euthergate-turn-443-udp.service"
+settle_seconds = 2
 
 [[commands.allowed]]
 name = "restart-caddy"
@@ -147,6 +153,9 @@ enabled = true
 required_action = "service.restart"
 target = "eutherbooks.service"
 command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/systemctl is-active eutherbooks.service"
+preflight = "sudo -n /usr/bin/systemctl is-active eutherbooks.service"
+verify = "sudo -n /usr/bin/systemctl is-active eutherbooks.service"
+settle_seconds = 2
 
 [[commands.allowed]]
 name = "restart-eutherpunkd"
@@ -156,6 +165,9 @@ enabled = true
 required_action = "service.restart"
 target = "eutherpunkd.service"
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
+preflight = "/usr/bin/systemctl --user is-active eutherpunkd.service"
+verify = "/usr/bin/systemctl --user is-active eutherpunkd.service"
+settle_seconds = 2
 
 
 [[commands.allowed]]
@@ -166,6 +178,9 @@ enabled = true
 required_action = "service.restart"
 target = "eutherpal.service"
 command = "/usr/bin/systemctl --user restart eutherpal.service && /usr/bin/systemctl --user is-active eutherpal.service"
+preflight = "/usr/bin/systemctl --user is-active eutherpal.service"
+verify = "/usr/bin/systemctl --user is-active eutherpal.service"
+settle_seconds = 2
 
 [[commands.allowed]]
 name = "restart-euthersync"
@@ -175,6 +190,9 @@ enabled = true
 required_action = "service.restart"
 target = "euthersync.service"
 command = "sudo -n /usr/bin/systemctl restart euthersync.service && /usr/bin/systemctl is-active euthersync.service"
+preflight = "sudo -n /usr/bin/systemctl is-active euthersync.service"
+verify = "sudo -n /usr/bin/systemctl is-active euthersync.service"
+settle_seconds = 2
 
 [[commands.allowed]]
 name = "restart-euther-watchdog"
@@ -184,6 +202,9 @@ enabled = true
 required_action = "service.restart"
 target = "euther-watchdog.service"
 command = "sudo -n /usr/bin/systemctl restart euther-watchdog.service && /usr/bin/systemctl is-active euther-watchdog.service"
+preflight = "sudo -n /usr/bin/systemctl is-active euther-watchdog.service"
+verify = "sudo -n /usr/bin/systemctl is-active euther-watchdog.service"
+settle_seconds = 2
 
 [[commands.allowed]]
 name = "euthersight-health"

@@ -102,6 +102,53 @@ class CommandPolicyTests(unittest.TestCase):
         consume.assert_called_once()
         run.assert_called_once()
 
+    def test_preflight_blocks_before_consuming_authorization(self) -> None:
+        config = config_for("write", allow_write_actions=True, command_enabled=True)
+        config["commands"]["allowed"][0]["preflight"] = "/bin/false"
+        with (
+            mock.patch.object(
+                euthernet_cli,
+                "run_configured",
+                return_value={"ok": False, "returncode": 1, "stdout": "", "stderr": "inactive"},
+            ) as run,
+            mock.patch.object(euthernet_cli, "consume_eutherid_action_proof") as consume,
+        ):
+            result = euthernet_cli.run_allowed_command(config, "test-command", authorization())
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["operation"]["status"], "blocked")
+        self.assertEqual(result["operation"]["preflight"]["summary"], "inactive")
+        consume.assert_not_called()
+        run.assert_called_once_with(config, "/bin/false", timeout=15)
+
+    def test_verified_write_returns_structured_operation(self) -> None:
+        config = config_for("write", allow_write_actions=True, command_enabled=True)
+        config["commands"]["allowed"][0].update({
+            "preflight": "/bin/preflight",
+            "verify": "/bin/verify",
+        })
+        results = [
+            {"ok": True, "returncode": 0, "stdout": "active", "stderr": ""},
+            {"ok": True, "returncode": 0, "stdout": "restarted", "stderr": ""},
+            {"ok": True, "returncode": 0, "stdout": "healthy", "stderr": ""},
+        ]
+        with (
+            mock.patch.object(euthernet_cli, "run_configured", side_effect=results),
+            mock.patch.object(
+                euthernet_cli,
+                "consume_eutherid_action_proof",
+                return_value={"ok": True, "authorization": {}},
+            ),
+        ):
+            result = euthernet_cli.run_allowed_command(config, "test-command", authorization())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["operation"]["status"], "healthy")
+        self.assertEqual(result["operation"]["preflight"]["summary"], "active")
+        self.assertEqual(result["operation"]["action"]["summary"], "restarted")
+        self.assertEqual(result["operation"]["verification"]["summary"], "healthy")
+        self.assertFalse(result["operation"]["rollback"]["attempted"])
+
     def test_enabled_write_without_eutherid_authorization_fails_closed(self) -> None:
         with mock.patch.object(euthernet_cli, "run_configured") as run:
             result = euthernet_cli.run_allowed_command(
