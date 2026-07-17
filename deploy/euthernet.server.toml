@@ -10,9 +10,9 @@ state_root = "/home/nichlas/EutherNet/state"
 [security]
 redact_secrets = true
 write_raw_command_output = false
-allow_write_actions = false
+allow_write_actions = true
 eutherid_url = "http://127.0.0.1:8792"
-eutherid_internal_token_file = "/etc/euthernet/eutherid-internal-token"
+eutherid_consumer_token_file = "/etc/euthernet/eutherid-consumer-token"
 
 [[collectors]]
 name = "system"
@@ -61,6 +61,15 @@ port = 8791
 
 [commands]
 allow_remote = true
+
+[[commands.allowed]]
+name = "eutherid-step-up-test"
+description = "Exercise the EutherID write boundary without changing server state."
+mode = "write"
+enabled = true
+required_action = "euthernet.step-up.test"
+target = "euthernet"
+command = "/usr/bin/printf 'eutherid-step-up-ok\\n'"
 
 [[commands.allowed]]
 name = "health"

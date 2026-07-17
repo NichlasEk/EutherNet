@@ -12,7 +12,11 @@ redact_secrets = true
 write_raw_command_output = false
 allow_write_actions = false
 eutherid_url = "http://127.0.0.1:8792"
-eutherid_internal_token_file = "/etc/euthernet/eutherid-internal-token"
+eutherid_consumer_token_file = "/etc/euthernet/eutherid-consumer-token"
+
+# Write commands also require `allow_write_actions = true`, `enabled = true`
+# on that exact allowlist entry, and a matching one-time EutherID proof. Keep
+# real actions disabled while piloting the boundary.
 
 [[collectors]]
 name = "system"

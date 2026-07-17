@@ -2069,14 +2069,14 @@ def consume_eutherid_action_proof(
 
     security = config.get("security", {})
     endpoint = str(security.get("eutherid_url", "")).strip().rstrip("/")
-    token_file = str(security.get("eutherid_internal_token_file", "")).strip()
+    token_file = str(security.get("eutherid_consumer_token_file", "")).strip()
     if not endpoint or not token_file:
         return {"ok": False, "error": "EutherID verifier is not configured"}
     try:
-        internal_token = pathlib.Path(token_file).read_text(encoding="utf-8").strip()
+        consumer_token = pathlib.Path(token_file).read_text(encoding="utf-8").strip()
     except OSError:
         return {"ok": False, "error": "EutherID verifier token is unavailable"}
-    if not internal_token:
+    if not consumer_token:
         return {"ok": False, "error": "EutherID verifier token is unavailable"}
 
     payload = json.dumps({"action_proof": action_proof, "expected": expected}).encode("utf-8")
@@ -2085,7 +2085,7 @@ def consume_eutherid_action_proof(
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "X-EutherID-Internal-Token": internal_token,
+            "X-EutherID-Consumer-Token": consumer_token,
         },
         method="POST",
     )
@@ -2137,7 +2137,15 @@ def run_allowed_command(
             "name": command_name,
             "mode": mode,
         }
+    consumed_authorization: dict[str, Any] | None = None
     if mode == "write":
+        if command.get("enabled") is not True:
+            return {
+                "ok": False,
+                "error": "write command is not enabled",
+                "name": command_name,
+                "mode": mode,
+            }
         authorized = consume_eutherid_action_proof(config, command, authorization)
         if not authorized.get("ok"):
             return {
@@ -2146,9 +2154,10 @@ def run_allowed_command(
                 "name": command_name,
                 "mode": mode,
             }
+        consumed_authorization = authorized.get("authorization")
 
     result = run_configured(config, command["command"], timeout=45)
-    return {
+    response = {
         "ok": bool(result.get("ok")),
         "name": command_name,
         "description": command.get("description", ""),
@@ -2157,6 +2166,9 @@ def run_allowed_command(
         "stdout": result.get("stdout", ""),
         "stderr": result.get("stderr", ""),
     }
+    if consumed_authorization is not None:
+        response["authorization"] = consumed_authorization
+    return response
 
 
 def command_run(config: dict[str, Any], command_name: str) -> int:

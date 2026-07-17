@@ -176,11 +176,13 @@ curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/run \
 It does not accept raw shell commands.
 
 Commands with `mode = "write"` require both `security.allow_write_actions = true`
-and a one-time EutherID authorization object. The signed proof must be bound to
+and `enabled = true` on that exact command, plus a one-time EutherID authorization object. Commands without the per-command switch remain denied even when the global pilot switch is enabled. The signed proof must be bound to
 the configured `required_action`, `target`, and command `name`; EutherNet
 consumes it through EutherID before starting the configured command. Missing
 configuration, an unavailable verifier, a mismatched binding, and replay all
 fail closed. Read commands do not consume or require an authorization proof.
+EutherNet uses the dedicated consumer credential, which cannot create challenges,
+manage devices, or issue proofs.
 
 ```json
 {

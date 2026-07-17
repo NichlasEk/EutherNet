@@ -10,7 +10,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import euthernet_cli  # noqa: E402
 
 
-def config_for(mode: str | None, *, allow_write_actions: bool = False) -> dict:
+def config_for(
+    mode: str | None,
+    *,
+    allow_write_actions: bool = False,
+    command_enabled: bool | None = None,
+) -> dict:
     command = {
         "name": "test-command",
         "description": "Policy test command.",
@@ -20,6 +25,8 @@ def config_for(mode: str | None, *, allow_write_actions: bool = False) -> dict:
     }
     if mode is not None:
         command["mode"] = mode
+    if command_enabled is not None:
+        command["enabled"] = command_enabled
     return {
         "server": {"command_transport": "local"},
         "security": {"allow_write_actions": allow_write_actions},
@@ -84,30 +91,67 @@ class CommandPolicyTests(unittest.TestCase):
             ) as run,
         ):
             result = euthernet_cli.run_allowed_command(
-                config_for("write", allow_write_actions=True),
+                config_for("write", allow_write_actions=True, command_enabled=True),
                 "test-command",
                 authorization(),
             )
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["mode"], "write")
+        self.assertEqual(result["authorization"], {})
         consume.assert_called_once()
         run.assert_called_once()
 
     def test_enabled_write_without_eutherid_authorization_fails_closed(self) -> None:
         with mock.patch.object(euthernet_cli, "run_configured") as run:
             result = euthernet_cli.run_allowed_command(
-                config_for("write", allow_write_actions=True), "test-command"
+                config_for("write", allow_write_actions=True, command_enabled=True), "test-command"
             )
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "EutherID authorization is required")
         run.assert_not_called()
 
+    def test_write_command_requires_per_command_enablement(self) -> None:
+        with (
+            mock.patch.object(euthernet_cli, "consume_eutherid_action_proof") as consume,
+            mock.patch.object(euthernet_cli, "run_configured") as run,
+        ):
+            result = euthernet_cli.run_allowed_command(
+                config_for("write", allow_write_actions=True),
+                "test-command",
+                authorization(),
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "write command is not enabled")
+        consume.assert_not_called()
+        run.assert_not_called()
+
+    def test_replayed_or_rejected_proof_never_runs_command(self) -> None:
+        with (
+            mock.patch.object(
+                euthernet_cli,
+                "consume_eutherid_action_proof",
+                return_value={"ok": False, "error": "EutherID authorization was rejected"},
+            ) as consume,
+            mock.patch.object(euthernet_cli, "run_configured") as run,
+        ):
+            result = euthernet_cli.run_allowed_command(
+                config_for("write", allow_write_actions=True, command_enabled=True),
+                "test-command",
+                authorization(),
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "EutherID authorization was rejected")
+        consume.assert_called_once()
+        run.assert_not_called()
+
     def test_binding_mismatch_is_rejected_before_contacting_eutherid(self) -> None:
         proof = authorization()
         proof["expected"]["target"] = "other.service"
-        config = config_for("write", allow_write_actions=True)
+        config = config_for("write", allow_write_actions=True, command_enabled=True)
         with mock.patch.object(euthernet_cli.urllib.request, "urlopen") as urlopen:
             result = euthernet_cli.consume_eutherid_action_proof(
                 config,
@@ -120,11 +164,11 @@ class CommandPolicyTests(unittest.TestCase):
         urlopen.assert_not_called()
 
     def test_eutherid_consumer_receives_exact_bound_proof(self) -> None:
-        config = config_for("write", allow_write_actions=True)
+        config = config_for("write", allow_write_actions=True, command_enabled=True)
         config["security"].update(
             {
                 "eutherid_url": "http://127.0.0.1:8792",
-                "eutherid_internal_token_file": "/run/credentials/euthernet/token",
+                "eutherid_consumer_token_file": "/run/credentials/euthernet/token",
             }
         )
         consumed = {
@@ -142,7 +186,7 @@ class CommandPolicyTests(unittest.TestCase):
         ).encode("utf-8")
         with (
             mock.patch.object(
-                euthernet_cli.pathlib.Path, "read_text", return_value="internal-token\n"
+                euthernet_cli.pathlib.Path, "read_text", return_value="consumer-token\n"
             ),
             mock.patch.object(
                 euthernet_cli.urllib.request, "urlopen", return_value=response
@@ -159,7 +203,8 @@ class CommandPolicyTests(unittest.TestCase):
         self.assertEqual(
             request.full_url, "http://127.0.0.1:8792/v1/action-proofs/consume"
         )
-        self.assertEqual(request.get_header("X-eutherid-internal-token"), "internal-token")
+        self.assertEqual(request.get_header("X-eutherid-consumer-token"), "consumer-token")
+        self.assertIsNone(request.get_header("X-eutherid-internal-token"))
         body = euthernet_cli.json.loads(request.data.decode("utf-8"))
         self.assertEqual(body, authorization())
 
