@@ -141,6 +141,7 @@ command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemct
 name = "restart-eutherbooks"
 description = "Restart the EutherBooks system service."
 mode = "write"
+enabled = true
 required_action = "service.restart"
 target = "eutherbooks.service"
 command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/systemctl is-active eutherbooks.service"
