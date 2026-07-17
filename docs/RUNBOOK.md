@@ -16,6 +16,21 @@ topology, NAT ports, credential rotation, and rollback live in EutherGate's
 `docs/turn-relay.md`.
 
 ## Local Inventory Run
+## EutherID restart batch
+
+The server map exposes fixed, device-approved restart handles for EutherPal,
+EutherSync, the Euther watchdog, and the two EutherGate TURN relays. Each write
+command is bound to `service.restart`, its exact target, and its exact command
+ID before EutherNet consumes the one-time EutherID action proof.
+
+System services use only the exact `systemctl restart` and `is-active`
+invocations listed in `deploy/euthernet-restart.sudoers`. EutherPal remains a
+user service and needs no sudo rule. The TURN pair uses the existing root-owned
+helper so both listeners are verified as one service group.
+
+Never accept arbitrary unit names. SSH, HAProxy, Cloudflare, DNS, networking,
+and firewall services stay outside this batch.
+
 
 Unlock the SSH key for the EutherOxide server before running the collector:
 

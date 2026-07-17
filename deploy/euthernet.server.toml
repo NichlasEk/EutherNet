@@ -127,6 +127,7 @@ name = "restart-euthergate-turn"
 description = "Restart both EutherGate TURN relays and verify their listeners."
 mode = "write"
 required_action = "service.restart"
+enabled = true
 target = "euthergate-turn.service-group"
 command = "sudo -n /usr/local/sbin/euthergate-turn-restart"
 
@@ -165,6 +166,24 @@ enabled = true
 required_action = "service.restart"
 target = "eutherpal.service"
 command = "/usr/bin/systemctl --user restart eutherpal.service && /usr/bin/systemctl --user is-active eutherpal.service"
+
+[[commands.allowed]]
+name = "restart-euthersync"
+description = "Restart the EutherSync system service."
+mode = "write"
+enabled = true
+required_action = "service.restart"
+target = "euthersync.service"
+command = "sudo -n /usr/bin/systemctl restart euthersync.service && /usr/bin/systemctl is-active euthersync.service"
+
+[[commands.allowed]]
+name = "restart-euther-watchdog"
+description = "Restart the Euther watchdog system service."
+mode = "write"
+enabled = true
+required_action = "service.restart"
+target = "euther-watchdog.service"
+command = "sudo -n /usr/bin/systemctl restart euther-watchdog.service && /usr/bin/systemctl is-active euther-watchdog.service"
 
 [[commands.allowed]]
 name = "euthersight-health"
