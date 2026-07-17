@@ -150,6 +150,7 @@ command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/sy
 name = "restart-eutherpunkd"
 description = "Restart the EutherPunk user service."
 mode = "write"
+enabled = true
 required_action = "service.restart"
 target = "eutherpunkd.service"
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
