@@ -51,6 +51,12 @@ and keeps 30 days. The workstation mirror starts at `04:30` with up to 15
 minutes of random delay. It uses `--ignore-existing` and does not delete older
 local recovery points.
 
+Health timers run every six hours on both machines. They validate timer state,
+freshness, age headers, checksum pairs, and every ciphertext checksum. A failed
+check on `.88` raises a desktop notification and remains visible as a failed
+user service. The `.186` result is collected by EutherNet and appears in the
+server map and `GET /api/euthernet/backup-health`.
+
 ## Key boundaries
 
 Encryption uses the public half of `.88`'s existing recovery identity:
@@ -90,6 +96,8 @@ On `.186`:
 systemctl is-active eutherhost-users-backup.timer
 systemctl show eutherhost-users-backup.service \
   -p Result -p ExecMainStatus -p ExecMainExitTimestamp --no-pager
+systemctl show eutherhost-users-backup-health.service \
+  -p Result -p ExecMainStatus -p ExecMainExitTimestamp --no-pager
 systemctl list-timers eutherhost-users-backup.timer --no-pager
 sudo sh -c 'cd /srv/backups/eutheroxide && sha256sum -c ./*.sha256'
 ```
@@ -105,6 +113,8 @@ On `.88`:
 ```bash
 systemctl --user is-active eutherhost-users-mirror.timer
 systemctl --user show eutherhost-users-mirror.service \
+  -p Result -p ExecMainStatus -p ExecMainExitTimestamp --no-pager
+systemctl --user show eutherhost-users-mirror-health.service \
   -p Result -p ExecMainStatus -p ExecMainExitTimestamp --no-pager
 systemctl --user list-timers eutherhost-users-mirror.timer --no-pager
 find /home/nichlas/Backups/EutherOxide -maxdepth 1 -type f -printf '%m %s %f\n' | sort

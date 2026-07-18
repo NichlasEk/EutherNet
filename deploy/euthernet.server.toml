@@ -41,6 +41,11 @@ name = "network"
 enabled = true
 interval_seconds = 900
 
+[[collectors]]
+name = "backup"
+enabled = true
+interval_seconds = 900
+
 [ai]
 enabled = true
 endpoint = "http://127.0.0.1:11434"

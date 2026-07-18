@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from euthernet_cli import (
     answer_question,
+    backup_health,
     backup_manifest,
     drift_changes,
     eutherverse_map,
@@ -87,6 +88,9 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if path == "/api/euthernet/backup-manifest":
             self.handle_backup_manifest()
+            return
+        if path == "/api/euthernet/backup-health":
+            self.handle_backup_health()
             return
         if path == "/api/euthernet/restore-drill":
             self.handle_restore_drill()
@@ -222,6 +226,14 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             self.write_error(HTTPStatus.NOT_FOUND, str(manifest.get("error", "backup manifest unavailable")))
             return
         self.write_json(HTTPStatus.OK, manifest)
+
+    def handle_backup_health(self) -> None:
+        snapshot = self.current_snapshot()
+        if snapshot is None:
+            self.write_error(HTTPStatus.NOT_FOUND, "no snapshot exists; run refresh first")
+            return
+        health = backup_health(snapshot)
+        self.write_json(HTTPStatus.OK, health)
 
     def handle_restore_drill(self) -> None:
         drill = restore_drill(self.config)
