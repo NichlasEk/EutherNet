@@ -13,6 +13,8 @@ tokens, and raw dumps from live services must stay outside git.
 
 - [docs/EUTHERNET_PLAN.md](docs/EUTHERNET_PLAN.md) captures the staged plan.
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) explains how to run the first collector.
+- [docs/EUTHERHOST_USERS_BACKUP.md](docs/EUTHERHOST_USERS_BACKUP.md) documents
+  the encrypted two-machine user backup and recovery procedure.
 - [docs/EUTHERIUM_JOX_AWARENESS.md](docs/EUTHERIUM_JOX_AWARENESS.md) documents
   how EutherNet maps and restores Eutherium, Joxbox, and `.jox` artifacts.
 - [docs/EUTHERIUM_AWARD_FLOW.md](docs/EUTHERIUM_AWARD_FLOW.md) explains
