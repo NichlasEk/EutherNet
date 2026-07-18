@@ -138,6 +138,7 @@ GET  /api/euthernet/restore-plan
 GET  /api/euthernet/restore-bundle?profile=full
 GET  /api/euthernet/restore-bundle?profile=backup
 GET  /api/euthernet/backup-manifest
+GET  /api/euthernet/backup-health
 GET  /api/euthernet/restore-drill
 GET  /api/euthernet/map
 POST /api/euthernet/ask
@@ -158,6 +159,7 @@ curl -fsS http://127.0.0.1:8791/api/euthernet/restore-plan
 curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=full'
 curl -fsS 'http://127.0.0.1:8791/api/euthernet/restore-bundle?profile=backup'
 curl -fsS http://127.0.0.1:8791/api/euthernet/backup-manifest
+curl -fsS http://127.0.0.1:8791/api/euthernet/backup-health
 curl -fsS http://127.0.0.1:8791/api/euthernet/restore-drill
 curl -fsS http://127.0.0.1:8791/api/euthernet/map
 curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/ask \

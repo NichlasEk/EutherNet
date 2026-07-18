@@ -96,6 +96,7 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
         .get("listening_tcp_udp", {})
         .get("stdout", "")
     )
+    backup = backup_health(snapshot)
     return {
         "collected_at": snapshot.get("collected_at", ""),
         "server": snapshot.get("server", {}),
@@ -109,7 +110,42 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
         "disk_warnings": disk_warnings,
         "package_count": len(parse_packages(package_text)),
         "listening_port_count": len(parse_listening_ports(listening_text)),
+        "backup": backup,
     }
+
+
+def backup_health(snapshot: dict[str, Any]) -> dict[str, Any]:
+    command = (
+        snapshot.get("collectors", {})
+        .get("backup", {})
+        .get("eutherhost_users", {})
+    )
+    stdout = command.get("stdout", "")
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, json.JSONDecodeError):
+        return {
+            "ok": False,
+            "available": False,
+            "error": command.get("stderr") or "backup health collector unavailable",
+            "backup_count": 0,
+            "latest_file": None,
+            "age_seconds": None,
+            "errors": ["backup health collector unavailable"],
+        }
+    if not isinstance(payload, dict):
+        return {
+            "ok": False,
+            "available": False,
+            "error": "backup health collector returned invalid JSON",
+            "backup_count": 0,
+            "latest_file": None,
+            "age_seconds": None,
+            "errors": ["backup health collector returned invalid JSON"],
+        }
+    payload["available"] = True
+    payload["collector_ok"] = bool(command.get("ok"))
+    return payload
 
 
 def failed_service_lines(value: str) -> list[str]:
@@ -660,6 +696,17 @@ def local_answer(config: dict[str, Any], question: str) -> str:
     repos = parse_repos(snapshot)
     server = snapshot["server"]
 
+    if any(word in question_lc for word in ["backup", "säkerhetskopia", "återställning"]):
+        backup = backup_health(snapshot)
+        if not backup.get("available"):
+            return "Backupstatus saknas i senaste snapshoten. Kör en EutherNet-refresh."
+        state = "frisk" if backup.get("ok") else "har fel"
+        return (
+            f"Serverbackupen är {state}. "
+            f"Jag ser {backup.get('backup_count', 0)} krypterade kopior; "
+            f"senaste är {backup.get('latest_file') or 'okänd'}."
+        )
+
     if any(word in question_lc for word in ["repo", "git", "repository"]):
         dirty = [repo for repo in repos if int(repo.get("dirty_lines") or "0") > 0]
         lines = [f"Jag ser {len(repos)} git-repon på {server['name']}."]
@@ -856,6 +903,8 @@ def operational_summary(config: dict[str, Any]) -> dict[str, Any]:
         f"- Failed services: {summary['failed_service_count']}",
         f"- Disk warnings >=85%: {summary['disk_warning_count']}",
         f"- Listening TCP ports: {summary['listening_port_count']}",
+        f"- Encrypted user backup: {'healthy' if summary['backup'].get('ok') else 'attention required'} "
+        f"({summary['backup'].get('backup_count', 0)} files)",
     ]
     if summary["dirty_repositories"]:
         lines.append("")
@@ -1642,6 +1691,13 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         ),
         key=port_sort_key,
     )
+    backup = backup_health(snapshot)
+    backup_status = "healthy" if backup.get("ok") else "failed"
+    backup_detail = (
+        f"{backup.get('backup_count', 0)} encrypted copies; latest {backup.get('latest_created_utc') or 'unknown'}"
+        if backup.get("available")
+        else "backup health collector unavailable"
+    )
     nodes: list[dict[str, str]] = [
         {"id": "internet", "label": "Internet", "type": "external", "status": "online", "detail": "WAN entrypoint"},
         {"id": "caddy", "label": "Caddy / apothictech.se", "type": "proxy", "status": "observed", "detail": "reverse proxy"},
@@ -1809,7 +1865,20 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         [
             {"id": "ollama", "label": "Local Ollama / qwen3-coder", "type": "ai", "status": "configured", "detail": "chat model endpoint"},
             {"id": "imagegen", "label": "Image Generator", "type": "ai", "status": "configured", "detail": "ComfyUI/image generation"},
-            {"id": "backups", "label": "Backup Data", "type": "storage", "status": "planned", "detail": "restore/backup manifests"},
+            {
+                "id": "backups",
+                "label": "Encrypted Backup Vault (.186)",
+                "type": "storage",
+                "status": backup_status,
+                "detail": backup_detail,
+            },
+            {
+                "id": "backup-mirror-apansson",
+                "label": "Backup Mirror (.88)",
+                "type": "storage",
+                "status": "configured",
+                "detail": "local checksum timer and desktop failure alert",
+            },
         ]
     )
     edges.extend(
@@ -1820,6 +1889,8 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             {"from": "backups", "to": "eutherstudio-storage", "label": "generated music + metadata", "type": "backup"},
             {"from": "backups", "to": "eutherbooks", "label": "library/audio", "type": "backup"},
             {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data", "type": "backup"},
+            {"from": "backups", "to": "backup-mirror-apansson", "label": "restricted read-only rsync", "type": "backup"},
+            {"from": "apansson", "to": "backup-mirror-apansson", "label": "local encrypted retention", "type": "hosts"},
         ]
     )
     lines = [
@@ -1861,6 +1932,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         "services": service_reports,
         "listening_services": listening_services,
         "ssh_connections": ssh_connections,
+        "backup_health": backup,
         "map_toml": map_toml,
         "map_md": "\n".join(lines) + "\n",
         "image_prompt": image_prompt,

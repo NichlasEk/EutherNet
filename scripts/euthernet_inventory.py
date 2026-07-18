@@ -74,6 +74,16 @@ NETWORK_COMMANDS = [
     RemoteCommand("ssh_connections", "ss -tnp | awk 'NR == 1 || /:22|ssh/'"),
 ]
 
+BACKUP_COMMANDS = [
+    RemoteCommand(
+        "eutherhost_users",
+        "/home/nichlas/EutherOxide/scripts/eutherhost-backup-status.py "
+        "--directory /srv/backups/eutheroxide "
+        "--timer eutherhost-users-backup.timer "
+        "--max-age-hours 36 --label server",
+    ),
+]
+
 
 def load_config(path: pathlib.Path) -> dict[str, Any]:
     with path.open("rb") as handle:
@@ -265,6 +275,8 @@ def collect(config: dict[str, Any]) -> dict[str, Any]:
         output["collectors"]["systemd_user"] = command_group(config, USER_SYSTEMD_COMMANDS)
     if "network" in enabled:
         output["collectors"]["network"] = command_group(config, NETWORK_COMMANDS)
+    if "backup" in enabled:
+        output["collectors"]["backup"] = command_group(config, BACKUP_COMMANDS)
     if "git_repositories" in enabled:
         roots = enabled["git_repositories"].get("roots", ["/home/nichlas"])
         output["collectors"]["git_repositories"] = {
