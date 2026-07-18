@@ -1,0 +1,57 @@
+[server]
+name = "euthersight-camera"
+lan_host = "192.168.32.88"
+public_host = ""
+ssh_host_alias = ""
+command_transport = "local"
+inventory_root = "/home/nichlas/EutherNet/state/camera-inventory"
+state_root = "/home/nichlas/EutherNet/state/camera"
+
+[security]
+redact_secrets = true
+write_raw_command_output = false
+allow_write_actions = true
+
+[[collectors]]
+name = "system"
+enabled = true
+interval_seconds = 3600
+
+[[collectors]]
+name = "systemd"
+enabled = true
+interval_seconds = 900
+
+[[collectors]]
+name = "network"
+enabled = true
+interval_seconds = 900
+
+[ai]
+enabled = false
+endpoint = "http://127.0.0.1:11434"
+model = ""
+send_raw_logs = false
+
+[mcp]
+enabled = false
+transport = "stdio"
+
+[http]
+enabled = true
+host = "127.0.0.1"
+port = 8796
+
+[commands]
+allow_remote = true
+
+[[commands.allowed]]
+name = "euthersight-health"
+description = "Show Frigate, AI worker, and tunnel health on the camera workstation."
+command = "/usr/bin/curl -fsS http://127.0.0.1:5000/api/stats >/dev/null && /usr/bin/curl -fsS http://127.0.0.1:7777/health"
+
+[[commands.allowed]]
+name = "restart-euthersight-frigate"
+description = "Restart the local EutherSight Frigate compose service and verify the camera API."
+write = true
+command = "sudo -n /usr/bin/docker compose -f /home/nichlas/EutherSight/docker-compose.yml restart frigate && /bin/sh -c 'for i in $(seq 1 30); do /usr/bin/curl -fsS http://127.0.0.1:5000/api/yard/latest.jpg --output /tmp/euthersight-restart-check.jpg && /usr/bin/file /tmp/euthersight-restart-check.jpg && exit 0; sleep 1; done; exit 1'"

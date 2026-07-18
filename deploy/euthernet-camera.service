@@ -1,0 +1,15 @@
+[Unit]
+Description=EutherNet camera workstation API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nichlas
+WorkingDirectory=/home/nichlas/EutherNet
+ExecStart=/usr/bin/python3 /home/nichlas/EutherNet/scripts/euthernet_http.py --config /home/nichlas/EutherNet/deploy/euthernet.camera.toml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

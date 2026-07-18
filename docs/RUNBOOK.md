@@ -177,6 +177,20 @@ curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/run \
 `/api/euthernet/run` accepts only configured command names from the allowlist.
 It does not accept raw shell commands.
 
+Commands that mutate services or data must declare `write = true`. They run
+only when both `[commands].allow_remote` and
+`[security].allow_write_actions` are true. Read-only allowlisted commands remain
+available when write actions are disabled. `GET /api/euthernet/commands`
+includes the resolved `write` flag so callers can present the boundary before
+requesting an action.
+
+The camera workstation uses `deploy/euthernet-camera.service` with
+`deploy/euthernet.camera.toml`. Its API binds only to `.88` loopback on port
+`8796`; `euthersight-euthernet-tunnel.service` exposes it only on `.186`
+loopback port `15196`. The Frigate restart is explicitly marked as a write
+action and remains a fixed allowlisted command rather than arbitrary shell
+input.
+
 ## EutherPunk Integration Shape
 
 EutherPunk should call the local HTTP API instead of reading EutherNet files or

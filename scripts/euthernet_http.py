@@ -167,7 +167,11 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
 
     def handle_commands(self) -> None:
         commands = [
-            {"name": item["name"], "description": item.get("description", "")}
+            {
+                "name": item["name"],
+                "description": item.get("description", ""),
+                "write": bool(item.get("write", False)),
+            }
             for item in self.config.get("commands", {}).get("allowed", [])
         ]
         self.write_json(HTTPStatus.OK, {"ok": True, "commands": commands})

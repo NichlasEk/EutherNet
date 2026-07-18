@@ -10,7 +10,7 @@ state_root = "state"
 [security]
 redact_secrets = true
 write_raw_command_output = false
-allow_write_actions = false
+allow_write_actions = true
 
 [[collectors]]
 name = "system"
@@ -93,27 +93,32 @@ command = "uptime"
 [[commands.allowed]]
 name = "restart-eutherhost"
 description = "Restart the EutherHost system service."
+write = true
 command = "sudo -n /usr/bin/systemctl restart eutherhost.service && /usr/bin/systemctl is-active eutherhost.service"
 
 [[commands.allowed]]
 name = "restart-caddy"
 description = "Restart the Caddy reverse proxy service."
+write = true
 command = "sudo -n /usr/bin/systemctl restart caddy.service && /usr/bin/systemctl is-active caddy.service"
 
 [[commands.allowed]]
 name = "restart-eutherbooks"
 description = "Restart the EutherBooks system service."
+write = true
 command = "sudo -n /usr/bin/systemctl restart eutherbooks.service && /usr/bin/systemctl is-active eutherbooks.service"
 
 [[commands.allowed]]
 name = "restart-eutherpunkd"
 description = "Restart the EutherPunk user service."
+write = true
 command = "/usr/bin/systemctl --user restart eutherpunkd.service && /usr/bin/systemctl --user is-active eutherpunkd.service"
 
 
 [[commands.allowed]]
 name = "restart-eutherpal"
 description = "Restart the EutherPal user service."
+write = true
 command = "/usr/bin/systemctl --user restart eutherpal.service && /usr/bin/systemctl --user is-active eutherpal.service"
 
 [[commands.allowed]]
@@ -129,9 +134,11 @@ command = "/usr/bin/timeout 8 /usr/bin/curl -fsS http://127.0.0.1:15000/api/stat
 [[commands.allowed]]
 name = "restart-euthersight-frigate-tunnel"
 description = "Restart the local reverse SSH listener for the Frigate tunnel and then check Frigate stats."
+write = true
 command = "sudo -n /usr/local/sbin/euthersight-frigate-tunnel-restart"
 
 [[commands.allowed]]
 name = "restart-euthersight-frigate"
 description = "Restart Frigate on the camera workstation through the EutherSight EutherNet tunnel."
+write = true
 command = "/usr/bin/curl -fsS -X POST http://127.0.0.1:15196/api/euthernet/run -H 'Content-Type: application/json' -d '{\"name\":\"restart-euthersight-frigate\"}' && /usr/bin/curl -fsS http://127.0.0.1:15000/api/yard/latest.jpg --output /tmp/euthersight-server-map-restart-check.jpg && /usr/bin/file /tmp/euthersight-server-map-restart-check.jpg"
