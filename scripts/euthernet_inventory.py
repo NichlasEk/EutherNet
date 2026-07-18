@@ -77,10 +77,8 @@ NETWORK_COMMANDS = [
 BACKUP_COMMANDS = [
     RemoteCommand(
         "eutherhost_users",
-        "/home/nichlas/EutherOxide/scripts/eutherhost-backup-status.py "
-        "--directory /srv/backups/eutheroxide "
-        "--timer eutherhost-users-backup.timer "
-        "--max-age-hours 36 --label server",
+        "journalctl -u eutherhost-users-backup-health.service "
+        "-n 50 --no-pager -o cat | sed -n '/^{/p' | tail -n 1",
     ),
 ]
 
