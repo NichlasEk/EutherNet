@@ -175,6 +175,30 @@ curl -fsS -X POST http://127.0.0.1:8791/api/euthernet/run \
 `/api/euthernet/run` accepts only configured command names from the allowlist.
 It does not accept raw shell commands.
 
+Commands with `mode = "write"` require both `security.allow_write_actions = true`
+and a one-time EutherID authorization object. The signed proof must be bound to
+the configured `required_action`, `target`, and command `name`; EutherNet
+consumes it through EutherID before starting the configured command. Missing
+configuration, an unavailable verifier, a mismatched binding, and replay all
+fail closed. Read commands do not consume or require an authorization proof.
+
+```json
+{
+  "name": "restart-eutherbooks",
+  "authorization": {
+    "action_proof": "signed-one-time-proof",
+    "expected": {
+      "actor": "nichlas",
+      "session_hash": "64-hex-characters",
+      "origin": "https://apothictech.se",
+      "action": "service.restart",
+      "target": "eutherbooks.service",
+      "command_id": "restart-eutherbooks"
+    }
+  }
+}
+```
+
 ## EutherPunk Integration Shape
 
 EutherPunk should call the local HTTP API instead of reading EutherNet files or

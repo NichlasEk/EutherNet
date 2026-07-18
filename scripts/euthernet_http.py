@@ -271,8 +271,14 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
         if not name:
             self.write_error(HTTPStatus.BAD_REQUEST, "name is required")
             return
-        result = run_allowed_command(self.config, name)
-        self.write_json(HTTPStatus.OK if result.get("ok") else HTTPStatus.BAD_REQUEST, result)
+        result = run_allowed_command(self.config, name, payload.get("authorization"))
+        if result.get("ok"):
+            status = HTTPStatus.OK
+        elif str(result.get("error", "")).startswith("EutherID"):
+            status = HTTPStatus.FORBIDDEN
+        else:
+            status = HTTPStatus.BAD_REQUEST
+        self.write_json(status, result)
 
 
 def award_eutherium(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
