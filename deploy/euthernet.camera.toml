@@ -55,3 +55,9 @@ name = "restart-euthersight-frigate"
 description = "Restart the local EutherSight Frigate compose service and verify the camera API."
 write = true
 command = "sudo -n /usr/bin/docker compose -f /home/nichlas/EutherSight/docker-compose.yml restart frigate && /bin/sh -c 'for i in $(seq 1 30); do /usr/bin/curl -fsS http://127.0.0.1:5000/api/yard/latest.jpg --output /tmp/euthersight-restart-check.jpg && /usr/bin/file /tmp/euthersight-restart-check.jpg && exit 0; sleep 1; done; exit 1'"
+
+[[commands.allowed]]
+name = "recover-euthersight-frigate"
+description = "Recreate Frigate and verify camera, detector, shared memory, and snapshot health."
+write = true
+command = "sudo -n /usr/local/sbin/euthersight-frigate-recover"
