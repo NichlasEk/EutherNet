@@ -238,3 +238,12 @@ mode = "write"
 required_action = "service.restart"
 target = "euthersight-frigate.service"
 command = "/usr/bin/curl -fsS -X POST http://127.0.0.1:15196/api/euthernet/run -H 'Content-Type: application/json' -d '{\"name\":\"restart-euthersight-frigate\"}' && /usr/bin/curl -fsS http://127.0.0.1:15000/api/yard/latest.jpg --output /tmp/euthersight-server-map-restart-check.jpg && /usr/bin/file /tmp/euthersight-server-map-restart-check.jpg"
+
+[[commands.allowed]]
+name = "recover-euthersight-frigate"
+description = "Recreate Frigate on the camera workstation and verify the complete detection pipeline."
+mode = "write"
+enabled = true
+required_action = "service.recover"
+target = "euthersight-frigate.service"
+command = "/usr/bin/curl -fsS -X POST http://127.0.0.1:15196/api/euthernet/run -H 'Content-Type: application/json' -d '{\"name\":\"recover-euthersight-frigate\"}'"
