@@ -1799,7 +1799,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         key=port_sort_key,
     )
     eutherhost_backup = backup_health(snapshot)
-    backup_status = "healthy" if eutherhost_backup.get("ok") else "failed"
+    backup_status = ("healthy" if eutherhost_backup.get("ok") else "failed") if eutherhost_backup.get("available") else "unknown"
     backup_detail = (
         f"{eutherhost_backup.get('backup_count', 0)} encrypted copies; latest {eutherhost_backup.get('latest_created_utc') or 'unknown'}"
         if eutherhost_backup.get("available")
@@ -1990,7 +1990,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             {"id": "backups", "label": "EutherID Backup Vault", "type": "storage", "status": eutherid_backup["status"], "detail": eutherid_backup["detail"]},
             {
                 "id": "eutherhost-users-backup",
-                "label": "Encrypted Users Backup (.186)",
+                "label": "Encrypted accounts/state/media (.186)",
                 "type": "storage",
                 "status": backup_status,
                 "detail": backup_detail,
@@ -2009,14 +2009,15 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
             {"from": "eutherpunk", "to": "ollama", "label": "chat model", "type": "ai"},
             {"from": "eutherpal", "to": "ollama", "label": "bank LLM via reverse SSH", "type": "ai"},
             {"from": "eutherpunk", "to": "imagegen", "label": "map render", "type": "ai"},
-            {"from": "backups", "to": "eutherstudio-storage", "label": "generated music + metadata", "type": "backup"},
-            {"from": "backups", "to": "eutherbooks", "label": "library/audio", "type": "backup"},
-            {"from": "backups", "to": "eutheroxide", "label": "/srv, roms, host data", "type": "backup"},
-            {"from": "eutherhost-users-backup", "to": "eutheroxide", "label": "encrypted users.toml", "type": "backup"},
+            {"from": "backups", "to": "eutherid", "label": "EutherID backup; separate scope", "type": "backup"},
+            {"from": "eutherhost-users-backup", "to": "eutheroxide", "label": "encrypted accounts/state/media; see coverage audit", "type": "backup"},
             {"from": "eutherhost-users-backup", "to": "backup-mirror-apansson", "label": "restricted read-only rsync", "type": "backup"},
             {"from": "apansson", "to": "backup-mirror-apansson", "label": "local encrypted retention", "type": "hosts"},
         ]
     )
+    household_nodes, household_edges = household_map(snapshot)
+    nodes.extend(household_nodes)
+    edges.extend(household_edges)
     lines = [
         "# EutherVerse Server Map",
         "",
@@ -2042,7 +2043,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         f"service districts labeled {service_names}, an Eutherium vault district with Joxbox artifact containers, "
         "an EutherStudio music district with a web portal, per-user song vault, share links, RTX 4090 worker, ACE-Step music core, and ACE lyrics model, "
         "a provenance ledger, trophy rooms, local AI cores labeled Ollama qwen3-coder and Image Generator, "
-        "backup vaults for /srv, ROMs, EutherBooks library/audio, and glowing data links annotated with ports. "
+        "Ebba robot via EutherWash and EutherVox, EutherShould telemetry, separate EutherVault with coverage unverified, and encrypted host backups with scope labels. "
         "Style: readable technical diagram, isometric cyberpunk city, dark background, neon cyan magenta amber accents, "
         "clear labels, no logos, no tiny unreadable text."
     )
@@ -2545,6 +2546,39 @@ def main(argv: list[str]) -> int:
     if args.command == "run":
         return command_run(config, args.name)
     return 1
+
+
+
+
+def household_map(snapshot: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Document fixed household topology; only observed units get runtime status."""
+    running = parse_running_service_units(systemd_stdout(snapshot, "running_services"))
+    failed = systemd_stdout(snapshot, "failed_services")
+    def unit_status(unit: str) -> str:
+        if any(unit in line.split() for line in failed.splitlines()):
+            return "failed"
+        return "running" if unit in running else "unknown"
+    nodes = [
+        {"id": "ebba", "label": "Ebba / Dreame D10 Plus", "type": "device", "status": "configured", "detail": "192.168.32.120; persistent SSH + LAN MIoT; robot-local WAN guard. Reachability not polled by map."},
+        {"id": "eutherwash", "label": "EutherWash", "type": "service", "status": unit_status("eutherwash.service"), "detail": ".186:8801; local status, navigation, delivery, speech, music; bearer + control-IP gates"},
+        {"id": "ebba-map-sync", "label": "Ebba map archive sync", "type": "service", "status": unit_status("eutherwash-vacuum-map-sync.service"), "detail": "User timer; keeps last validated archive if transient robot export is missing. Fine-grid navigation uses a separate path."},
+        {"id": "euthershould", "label": "EutherShould", "type": "service", "status": unit_status("euthershould.service"), "detail": ".186; household telemetry through local EutherWash"},
+        {"id": "euthervox", "label": "EutherVox gateway + Android", "type": "service", "status": "configured", "detail": "Gateway on .88:8788; authenticated WSS; Android beta32 includes direct Ebba speech, map delivery, push-to-talk and music"},
+        {"id": "euthervault", "label": "EutherVault (.149)", "type": "storage", "status": "unknown", "detail": "https://eutherbackup.local; browser/login reachable 2026-09-16. Dataset coverage, schedules and restore results NOT verified; SSH access pending."},
+    ]
+    edges = [
+        {"from": "server", "to": name, "label": "user service", "type": "hosts"}
+        for name in ("eutherwash", "euthershould", "ebba-map-sync")
+    ]
+    edges += [
+        {"from": "apansson", "to": "euthervox", "label": "gateway :8788", "type": "hosts"},
+        {"from": "euthervox", "to": "eutherwash", "label": "authenticated local API :8801", "type": "api"},
+        {"from": "euthershould", "to": "eutherwash", "label": "local status", "type": "api"},
+        {"from": "eutherwash", "to": "ebba", "label": "SSH :22 / MIoT UDP :54321; navigation + audio", "type": "api"},
+        {"from": "ebba-map-sync", "to": "ebba", "label": "SSH map import; cached fallback", "type": "api"},
+        {"from": "euthervault", "to": "eutheroxide", "label": "scoped EutherID login; NOT proof of backup coverage", "type": "auth"},
+    ]
+    return nodes, edges
 
 
 if __name__ == "__main__":

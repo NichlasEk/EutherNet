@@ -11,6 +11,8 @@ tokens, and raw dumps from live services must stay outside git.
 
 ## Starting Points
 
+- [Ebba and EutherVault inventory](docs/EBBA_AND_EUTHERVAULT_2026-09-16.md) records local robot architecture, recovery history, service links and verified versus unverified backup coverage.
+
 - [docs/EUTHERNET_PLAN.md](docs/EUTHERNET_PLAN.md) captures the staged plan.
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) explains how to run the first collector.
 - [docs/EUTHERHOST_USERS_BACKUP.md](docs/EUTHERHOST_USERS_BACKUP.md) documents
