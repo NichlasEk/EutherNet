@@ -126,3 +126,37 @@ I syskonrepot EutherWash under `docs/`:
 
 EutherOxides `docs/EUTHERVAULT_ADMIN.md` beskriver den äldre hostbackupytan.
 Namnet ensamt bevisar inte integration med den separata servern .149.
+
+## Tillfällig separat Ebba-backup på .186
+
+På användarens begäran skapades en separat engångskopia under
+`/srv/backups/ebba/20260916T192347Z/`. Den är inte bevis på att EutherVault
+hämtar denna katalog; ingen EutherVault-inloggning eller konfiguration ändrades.
+
+- `ebba-workstation.tar.zst`: hela `EutherWash/.private/`,
+  `~/.local/state/eutherwash/flash-research/`,
+  `~/.local/share/eutherwash/backups/` samt EutherWash docs, tools, src och
+  tillgängliga projekt-/beroendefiler från .88.
+- `manifest.json`: individuella SHA-256, storlekar och symlänkmål för 19 748
+  filer/länkar, totalt 10 109 951 265 byte filinnehåll före komprimering.
+- `ebba-server-runtime.tar.zst`: .186:s `.config/eutherwash/`,
+  `.local/share/eutherwash/`, `.local/state/eutherwash/` och installerade
+  EutherWash user units. Innehåller privata anslutningsuppgifter och kartcache.
+- `SHA256SUMS`, `README.txt` och `server-runtime-sources.json`: verifiering,
+  återläsningsanvisning och serverkällor.
+
+Alla filinnehåll i arbetsstationsarkivet jämfördes mot manifestet före
+överföring. På mottagaren verifierades arkiv- och manifest-SHA-256 samt zstd:s
+integritetskontroll. Katalogen är endast åtkomlig för `nichlas` (0700), filerna
+0600. Arkiven är inte krypterade: detta är en privat temporär backup på den
+betrodda servern, inte en offentlig nedladdning eller Git-innehåll.
+
+Roboten kontaktades inte. Kartor och robotpartitioner i kopian är tidigare
+sparade versioner, inte en ny avläsning av robotens aktuella `/data`.
+Serverns runtime är en live filkopia, inte en transaktionskonsistent
+applikationssnapshot. Ursprungliga filer behölls på .88.
+
+Verifiera från backupkatalogen med `sha256sum -c SHA256SUMS`. Återläs alltid
+till en ny tom katalog med `tar --zstd -xf ARKIV -C ÅTERLÄSNINGSKATALOG`.
+Detta återställer filer; det är inte en instruktion att skriva rådumpen direkt
+till robotens NAND. Följ den inkluderade modell- och flashdokumentationen.
