@@ -33,6 +33,7 @@ from euthernet_inventory import collect, load_config, write_outputs
 
 class EutherNetHTTP(BaseHTTPRequestHandler):
     config: dict[str, Any]
+    scryer_runtime: Any = None
 
     server_version = "EutherNetHTTP/0.1"
 
@@ -59,6 +60,9 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/euthernet/scryer":
+            self.write_json(HTTPStatus.OK, self.scryer_runtime.snapshot())
+            return
         if path == "/api/euthernet/status":
             self.handle_status()
             return
@@ -102,6 +106,20 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/euthernet/scryer/control":
+            try:
+                if int(self.headers.get("Content-Length", "0")) not in range(1, 2049):
+                    raise ValueError("bounded request required")
+                payload = self.read_json()
+                if not isinstance(payload, dict):
+                    raise ValueError("object required")
+                result = self.scryer_runtime.control(payload.get("command"), payload.get("ghost_id"))
+                self.write_json(HTTPStatus.OK, result)
+            except (ValueError, TypeError):
+                self.write_error(HTTPStatus.BAD_REQUEST, "invalid Scryer control")
+            except OSError:
+                self.write_error(HTTPStatus.SERVICE_UNAVAILABLE, "Scryer state could not be persisted")
+            return
         if path == "/api/euthernet/ask":
             self.handle_ask()
             return
@@ -261,6 +279,11 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
             return
         if payload.get("persona") == "scryer":
             from scryer import answer as scryer_answer
+            if self.scryer_runtime:
+                if not self.scryer_runtime.model_allowed():
+                    self.write_json(HTTPStatus.OK, {"ok": True, "source": "scryer-inventory", "answer": "Scryer is paused or disabled."})
+                    return
+                payload["node"] = self.scryer_runtime.conversation()
             self.write_json(HTTPStatus.OK, scryer_answer(self.config, payload, eutherverse_map(self.config)))
             return
         self.write_json(HTTPStatus.OK, {"ok": True, **answer_question(self.config, question)})
@@ -503,14 +526,24 @@ def main(argv: list[str]) -> int:
     host = args.host or http_config.get("host", "127.0.0.1")
     port = args.port or int(http_config.get("port", 8791))
 
+    from scryer_world import ScryerWorld
+    EutherNetHTTP.scryer_runtime = ScryerWorld(
+        config["server"].get("state_root", "state"), lambda: eutherverse_map(config)
+    )
     EutherNetHTTP.config = config
     server = ThreadingHTTPServer((host, port), EutherNetHTTP)
+    EutherNetHTTP.scryer_runtime.start()
+    import signal
+    def stop_scryer_service(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, stop_scryer_service)
     print(f"euthernet http listening on http://{host}:{port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        EutherNetHTTP.scryer_runtime.close()
         server.server_close()
     return 0
 
