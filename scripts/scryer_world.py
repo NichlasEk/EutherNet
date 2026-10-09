@@ -166,6 +166,9 @@ def observation(raw):
         or not isinstance(raw.get("hosted"), list)
         or len(raw["hosted"]) > 12
         or not all(valid_id(v) for v in raw["hosted"])
+        or not isinstance(raw.get("dependents", []), list)
+        or len(raw.get("dependents", [])) > 12
+        or not all(valid_id(v) for v in raw.get("dependents", []))
     ):
         raise ValueError("invalid observation")
     stamp = iso(raw["stamp"])
@@ -186,14 +189,18 @@ def observation(raw):
         "source": "EutherNet inventory",
         "outcome": "inspected" if len(raw["hosted"]) >= 2 else "nothing interesting",
         "hosted": list(raw["hosted"]),
+        "dependents": [v for v in raw.get("dependents", [])[:12] if valid_id(v)],
     }
 
 
-def hypothesis(o, now, status="active"):
+def hypothesis(o, now, status="active", pattern="shared-host", history=None):
     host = o["node"]
-    links = sorted(set(o["hosted"]))
-    return {
-        "id": f"shared-host/{host}/{','.join(links)}",
+    links = sorted(
+        set(o.get("dependents", []) if pattern == "shared-dependency" else o["hosted"])
+    )
+    result = {
+        "id": f"{pattern}/{host}/{','.join(links)}",
+        "pattern": pattern,
         "kind": "hypothesis",
         "support": copy.deepcopy(o),
         "node": host,
@@ -208,6 +215,78 @@ def hypothesis(o, now, status="active"):
         "status": status,
         "at": now,
     }
+
+    if pattern == "shared-dependency":
+        result.update(
+            description=f"What if the services depending on {host} lost that shared dependency?",
+            assumptions="Dependency edges describe a real requirement. The map does not establish fallback behavior.",
+            uncertainty="Inference: a shared dependency may affect several services. Unknown: redundancy, cache behavior and actual outage impact.",
+            benefit="Documenting fallback behavior could reveal a common point of failure.",
+            test="Compare documented fallback behavior for linked services. No outage or failover has been triggered.",
+        )
+    elif pattern == "status-changes":
+        history = [observation(item) for item in (history or [])][-4:]
+        if (
+            len(history) < 3
+            or len({v["stamp"] for v in history}) != len(history)
+            or any(v["node"] != host for v in history)
+            or sum(a["status"] != b["status"] for a, b in zip(history, history[1:])) < 2
+        ):
+            raise ValueError("insufficient status change evidence")
+        result.update(
+            id=f"status-changes/{host}",
+            links=[host],
+            history=history,
+            evidence=[v["id"] for v in history],
+            description=f"What if the repeated reported status changes for {host} have a common cause?",
+            assumptions="Inventory snapshots are comparable. Changes may reflect collector timing rather than a service problem.",
+            uncertainty="Verified: differing inventory statuses. Unknown: actual uptime, root cause and whether users were affected.",
+            benefit="Comparing change times with maintenance history could distinguish expected transitions from instability.",
+            test="Compare the listed observation times with documented maintenance. No logs or private content have been read.",
+        )
+    elif pattern != "shared-host":
+        raise ValueError("unknown hypothesis pattern")
+    return result
+
+
+def review(value):
+    if value is None:
+        return {"saved": False, "outcome": "untested", "note": "", "at": 0}
+    if not isinstance(value, dict) or value.get("outcome") not in {
+        "untested",
+        "supported",
+        "not-supported",
+        "inconclusive",
+    }:
+        raise ValueError("invalid review")
+    note = value.get("note", "")
+    at = value.get("at", 0)
+    if (
+        not isinstance(note, str)
+        or len(note) > 600
+        or not isinstance(at, (int, float))
+        or not math.isfinite(at)
+    ):
+        raise ValueError("invalid review note")
+    return {
+        "saved": value.get("saved") is True,
+        "outcome": value["outcome"],
+        "note": note,
+        "at": at,
+    }
+
+
+def restore_ghost(g):
+    result = hypothesis(
+        observation(g["support"]),
+        g["at"],
+        g["status"],
+        g.get("pattern", "shared-host"),
+        g.get("history"),
+    )
+    if g.get("review") is not None:
+        result["review"] = review(g["review"])
+    return result
 
 
 class ScryerWorld:
@@ -253,7 +332,7 @@ class ScryerWorld:
                     raise ValueError("invalid memory size")
             state["observations"] = [observation(o) for o in raw["observations"]]
             state["ghosts"] = [
-                hypothesis(observation(g["support"]), g["at"], g["status"])
+                restore_ghost(g)
                 for g in raw["ghosts"]
                 if g.get("kind") == "hypothesis"
                 and g.get("status") in {"active", "dismissed", "archived"}
@@ -378,11 +457,21 @@ class ScryerWorld:
             hosts = {
                 (e["from"], e["to"]) for e in world["edges"] if e["type"] == "hosts"
             }
+            dependencies = {
+                (e["to"], e["from"])
+                for e in world["edges"]
+                if e["type"] == "dependency"
+            }
             for g in s["ghosts"]:
                 if g["status"] == "active" and (
                     any(v not in ids for v in g["links"])
                     or any(
-                        (g["node"], v) not in hosts
+                        (g["node"], v)
+                        not in (
+                            dependencies
+                            if g.get("pattern") == "shared-dependency"
+                            else hosts
+                        )
                         for v in g["links"]
                         if v != g["node"]
                     )
@@ -511,34 +600,93 @@ class ScryerWorld:
                 "status": n["status"],
                 "at": now,
                 "hosted": hosted,
+                "dependents": sorted(
+                    {
+                        e["from"]
+                        for e in self.world["edges"]
+                        if e["type"] == "dependency" and e["to"] == identity
+                    }
+                )[:12],
             }
         )
         s["observations"] = (s["observations"] + [o])[-64:]
         s["visited"].append(identity)
         s["phase"] = "contemplating"
+        candidates = []
         if len(hosted) >= 2:
-            ghost = hypothesis(o, now)
+            candidates.append(hypothesis(o, now))
+        if len(o["dependents"]) >= 2:
+            candidates.append(hypothesis(o, now, pattern="shared-dependency"))
+        history = [v for v in s["observations"] if v["node"] == identity][-4:]
+        if (
+            len(history) >= 3
+            and len({v["stamp"] for v in history}) == len(history)
+            and sum(a["status"] != b["status"] for a, b in zip(history, history[1:]))
+            >= 2
+        ):
+            candidates.append(
+                hypothesis(o, now, pattern="status-changes", history=history)
+            )
+        for ghost in candidates:
             if not any(g["id"] == ghost["id"] for g in s["ghosts"]):
-                s["ghosts"] = (s["ghosts"] + [ghost])[-24:]
+                if len(s["ghosts"]) >= 24:
+                    disposable = next(
+                        (
+                            g
+                            for g in s["ghosts"]
+                            if not g.get("review", {}).get("saved")
+                        ),
+                        None,
+                    )
+                    if disposable is None:
+                        continue
+                    s["ghosts"].remove(disposable)
+                s["ghosts"].append(ghost)
                 s["phase"] = "discovery"
         self.revision += 1
 
-    def control(self, command, ghost_id=None):
+    def control(self, command, ghost_id=None, data=None):
         with self.lock:
-            if command not in {"pause", "resume", "disable", "enable", "dismiss"}:
+            if command not in {
+                "pause",
+                "resume",
+                "disable",
+                "enable",
+                "dismiss",
+                "save",
+                "review",
+            }:
                 raise ValueError("unsupported control")
             before = copy.deepcopy(self.state)
             if command in {"pause", "resume"}:
                 self.state["paused"] = command == "pause"
             if command in {"disable", "enable"}:
                 self.state["disabled"] = command == "disable"
-            if command == "dismiss":
+            if command in {"dismiss", "save", "review"}:
                 ghost = next(
                     (g for g in self.state["ghosts"] if g["id"] == ghost_id), None
                 )
                 if not ghost:
                     raise ValueError("unknown hypothesis")
-                ghost["status"] = "dismissed"
+                if command == "dismiss":
+                    ghost["status"] = "dismissed"
+                else:
+                    current = review(ghost.get("review"))
+                    if command == "save":
+                        current["saved"] = not current["saved"]
+                    else:
+                        if not isinstance(data, dict):
+                            raise ValueError("review required")
+                        current = review(
+                            {
+                                **current,
+                                **{
+                                    k: data[k] for k in ("note", "outcome") if k in data
+                                },
+                            }
+                        )
+                    current["at"] = self.clock()
+                    ghost["review"] = current
             if command in {"resume", "enable"} and self.error in {
                 "state-invalid",
                 "cycle-failed",

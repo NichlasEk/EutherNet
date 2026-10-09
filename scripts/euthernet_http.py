@@ -108,12 +108,12 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/euthernet/scryer/control":
             try:
-                if int(self.headers.get("Content-Length", "0")) not in range(1, 2049):
+                if int(self.headers.get("Content-Length", "0")) not in range(1, 4097):
                     raise ValueError("bounded request required")
                 payload = self.read_json()
                 if not isinstance(payload, dict):
                     raise ValueError("object required")
-                result = self.scryer_runtime.control(payload.get("command"), payload.get("ghost_id"))
+                result = self.scryer_runtime.control(payload.get("command"), payload.get("ghost_id"), payload.get("data"))
                 self.write_json(HTTPStatus.OK, result)
             except (ValueError, TypeError):
                 self.write_error(HTTPStatus.BAD_REQUEST, "invalid Scryer control")

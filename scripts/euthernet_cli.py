@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from mirror_health import read_remote as mirror_health, describe as describe_mirror_health
 import datetime as dt
 import json
 import pathlib
@@ -1798,6 +1799,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
         ),
         key=port_sort_key,
     )
+    mirror = mirror_health()
     eutherhost_backup = backup_health(snapshot)
     backup_status = ("healthy" if eutherhost_backup.get("ok") else "failed") if eutherhost_backup.get("available") else "unknown"
     backup_detail = (
@@ -1999,8 +2001,8 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
                 "id": "backup-mirror-apansson",
                 "label": "Backup Mirror (.88)",
                 "type": "storage",
-                "status": "configured",
-                "detail": "Configured encrypted mirror on .88; local checksum checks exist, but their results are not collected by this map.",
+                "status": mirror["status"],
+                "detail": describe_mirror_health(mirror),
             },
         ]
     )
