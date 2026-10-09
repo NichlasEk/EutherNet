@@ -259,6 +259,10 @@ class EutherNetHTTP(BaseHTTPRequestHandler):
         if not question:
             self.write_error(HTTPStatus.BAD_REQUEST, "question is required")
             return
+        if payload.get("persona") == "scryer":
+            from scryer import answer as scryer_answer
+            self.write_json(HTTPStatus.OK, scryer_answer(self.config, payload, eutherverse_map(self.config)))
+            return
         self.write_json(HTTPStatus.OK, {"ok": True, **answer_question(self.config, question)})
 
     def handle_refresh(self) -> None:
