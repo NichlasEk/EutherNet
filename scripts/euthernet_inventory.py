@@ -57,6 +57,11 @@ SYSTEMD_COMMANDS = [
 
 USER_SYSTEMD_COMMANDS = [
     RemoteCommand(
+        "map_sync_status",
+        "systemctl --user show eutherwash-vacuum-map-sync.service "
+        "--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecMainExitTimestamp",
+    ),
+    RemoteCommand(
         "failed_services",
         "systemctl --user list-units --type=service --state=failed --no-pager --plain",
     ),

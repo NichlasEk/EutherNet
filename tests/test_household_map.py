@@ -2,7 +2,7 @@ import pathlib
 import sys
 import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'scripts'))
-from euthernet_cli import household_map
+from euthernet_cli import household_map, map_sync_status
 
 class HouseholdMapTests(unittest.TestCase):
     def test_failed_sync_does_not_claim_robot_offline_or_vault_protected(self):
@@ -21,3 +21,21 @@ class HouseholdMapTests(unittest.TestCase):
     def test_missing_inventory_is_unknown(self):
         nodes, _ = household_map({})
         self.assertEqual(next(n for n in nodes if n['id'] == 'eutherwash')['status'], 'unknown')
+
+class MapSyncStatusTests(unittest.TestCase):
+    def status(self, **props):
+        values = dict(LoadState="loaded", ActiveState="inactive", Result="success", ExecMainStatus="0", ExecMainExitTimestamp="Fri 2026-10-09 20:00:00 CEST")
+        values.update(props)
+        return map_sync_status({"collectors": {"systemd_user": {"map_sync_status": {"ok": True, "stdout": "\n".join(f"{k}={v}" for k,v in values.items())}}}})
+
+    def test_successful_oneshot_is_healthy_while_inactive(self):
+        self.assertEqual(self.status(), "healthy")
+
+    def test_failed_import_is_failed(self):
+        self.assertEqual(self.status(ActiveState="failed", Result="exit-code", ExecMainStatus="1"), "failed")
+
+    def test_in_flight_and_unobserved_are_not_success(self):
+        self.assertEqual(self.status(ActiveState="activating"), "observed")
+        self.assertEqual(self.status(ExecMainExitTimestamp=""), "unknown")
+        self.assertEqual(self.status(LoadState="not-found"), "unknown")
+        self.assertEqual(map_sync_status({}), "unknown")

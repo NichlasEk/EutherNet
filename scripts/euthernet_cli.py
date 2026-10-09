@@ -2000,7 +2000,7 @@ def eutherverse_map(config: dict[str, Any]) -> dict[str, Any]:
                 "label": "Backup Mirror (.88)",
                 "type": "storage",
                 "status": "configured",
-                "detail": "local checksum timer and desktop failure alert",
+                "detail": "Configured encrypted mirror on .88; local checksum checks exist, but their results are not collected by this map.",
             },
         ]
     )
@@ -2550,6 +2550,28 @@ def main(argv: list[str]) -> int:
 
 
 
+def map_sync_status(snapshot: dict[str, Any]) -> str:
+    """A oneshot is normally inactive; its last completed result is authoritative."""
+    result = snapshot.get("collectors", {}).get("systemd_user", {}).get("map_sync_status", {})
+    if not result.get("ok"):
+        failed = systemd_stdout(snapshot, "failed_services")
+        return "failed" if any("eutherwash-vacuum-map-sync.service" in line.split() for line in failed.splitlines()) else "unknown"
+    props = dict(line.split("=", 1) for line in result.get("stdout", "").splitlines() if "=" in line)
+    if props.get("LoadState") != "loaded":
+        return "unknown"
+    if props.get("ActiveState") == "failed":
+        return "failed"
+    if props.get("ActiveState") in {"activating", "deactivating", "reloading"}:
+        return "observed"  # currently in flight, not a completed success
+    if not props.get("ExecMainExitTimestamp"):
+        return "unknown"
+    if props.get("Result") and props["Result"] != "success":
+        return "failed"
+    if props.get("ExecMainStatus") not in {None, "0"}:
+        return "failed"
+    return "healthy" if props.get("Result") == "success" and props.get("ExecMainStatus") == "0" else "unknown"
+
+
 def household_map(snapshot: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Document fixed household topology; only observed units get runtime status."""
     running = parse_running_service_units(systemd_stdout(snapshot, "running_services"))
@@ -2561,7 +2583,7 @@ def household_map(snapshot: dict[str, Any]) -> tuple[list[dict[str, str]], list[
     nodes = [
         {"id": "ebba", "label": "Ebba / Dreame D10 Plus", "type": "device", "status": "configured", "detail": "192.168.32.120; persistent SSH + LAN MIoT; robot-local WAN guard. Reachability not polled by map."},
         {"id": "eutherwash", "label": "EutherWash", "type": "service", "status": unit_status("eutherwash.service"), "detail": ".186:8801; local status, navigation, delivery, speech, music; bearer + control-IP gates"},
-        {"id": "ebba-map-sync", "label": "Ebba map archive sync", "type": "service", "status": unit_status("eutherwash-vacuum-map-sync.service"), "detail": "User timer; keeps last validated archive if transient robot export is missing. Fine-grid navigation uses a separate path."},
+        {"id": "ebba-map-sync", "label": "Ebba map archive sync", "type": "service", "status": map_sync_status(snapshot), "detail": "User timer; keeps last validated archive if transient robot export is missing. Fine-grid navigation uses a separate path."},
         {"id": "euthershould", "label": "EutherShould", "type": "service", "status": unit_status("euthershould.service"), "detail": ".186; household telemetry through local EutherWash"},
         {"id": "euthervox", "label": "EutherVox gateway + Android", "type": "service", "status": "configured", "detail": "Gateway on .88:8788; authenticated WSS; Android beta32 includes direct Ebba speech, map delivery, push-to-talk and music"},
         {"id": "euthervault", "label": "EutherVault (.149)", "type": "storage", "status": "unknown", "detail": "https://eutherbackup.local; browser/login reachable 2026-09-16. Dataset coverage, schedules and restore results NOT verified; SSH access pending."},
