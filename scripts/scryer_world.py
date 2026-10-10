@@ -16,6 +16,7 @@ import pathlib
 import re
 import threading
 import time
+import scryer_reports
 
 ID = re.compile(r"^[a-zA-Z0-9_.-]{1,80}$")
 STATUSES = {
@@ -148,6 +149,7 @@ def initial():
         "disabled": False,
         "nextAt": 0,
         "cursor": 0,
+        "reports": [],
         "observations": [],
         "ghosts": [],
         "statuses": {},
@@ -330,6 +332,7 @@ class ScryerWorld:
             ]:
                 if not isinstance(raw.get(key), list) or len(raw[key]) > limit:
                     raise ValueError("invalid memory size")
+            state["reports"] = scryer_reports.restore(raw.get("reports", []))
             state["observations"] = [observation(o) for o in raw["observations"]]
             state["ghosts"] = [
                 restore_ghost(g)
@@ -416,6 +419,8 @@ class ScryerWorld:
             s["statuses"] = {n["id"]: n["status"] for n in world["nodes"]}
             s["stamp"] = world["stamp"]
             self.world = world
+            if 0 <= self.clock() - epoch(world["stamp"]) <= 86400000:
+                scryer_reports.update(s["reports"], world, self.clock())
             # Conservative raster: 5.6 clearance includes the entire 2-unit step.
             blocked = set()
             for p in world["obstacles"]:
@@ -655,9 +660,13 @@ class ScryerWorld:
                 "dismiss",
                 "save",
                 "review",
+                "report-ack",
+                "report-snooze",
             }:
                 raise ValueError("unsupported control")
             before = copy.deepcopy(self.state)
+            if command.startswith("report-"):
+                scryer_reports.control(self.state["reports"], command, ghost_id, self.clock())
             if command in {"pause", "resume"}:
                 self.state["paused"] = command == "pause"
             if command in {"disable", "enable"}:
@@ -722,6 +731,7 @@ class ScryerWorld:
             return {
                 "ok": True,
                 "scope": "shared",
+                "reports": scryer_reports.public(self.state["reports"], self.world, self.clock()),
                 "state": copy.deepcopy(self.state),
                 "world": copy.deepcopy(self.world),
                 "revision": self.revision,

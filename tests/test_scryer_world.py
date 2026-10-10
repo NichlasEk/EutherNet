@@ -3,6 +3,8 @@ import json
 import pathlib
 import tempfile
 import unittest
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "scripts"))
 
 spec = importlib.util.spec_from_file_location(
     "scryer_world", pathlib.Path(__file__).parents[1] / "scripts/scryer_world.py"
@@ -59,6 +61,20 @@ class WorldTest(unittest.TestCase):
         self.assertNotIn("PRIVATE", json.dumps(s))
         self.assertEqual(len(s["world"]["nodes"]), 3)
         self.assertGreater(len(s["state"]["observations"]), 0)
+
+    def test_report_acknowledgement_survives_restart_separately_from_ghosts(self):
+        data = fixture()
+        data["nodes"][1]["status"] = "failed"
+        self.world.ingest(data)
+        self.world.control("report-ack", "vault")
+        restored = world_module.ScryerWorld(self.directory.name, fixture, clock=lambda: self.now)
+        restored.ingest(data)
+        report = restored.snapshot()["reports"][0]
+        self.assertEqual(report["id"], "vault")
+        self.assertEqual(report["state"], "open")
+        self.assertTrue(report["acknowledged"])
+        self.assertEqual(restored.state["ghosts"], [])
+        self.assertNotIn("reports", restored.world)
 
     def test_navigation_stays_clear_of_all_obstacles(self):
         last = dict(self.world.state["position"])
